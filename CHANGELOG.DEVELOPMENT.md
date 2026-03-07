@@ -6,6 +6,65 @@
 
 ## 📅 最近更新
 
+### v4.4.0 - 多用户安全体系全面改造 (2026-03-07)
+
+#### 🔐 JWT + Refresh Token 双令牌认证体系 [NEW]
+- ✅ **Access Token (HttpOnly Cookie)**: 管理员 24h / 普通用户 10h 有效期，自动附带于所有 API 请求
+- ✅ **Refresh Token (HttpOnly Cookie)**: 管理员 365d / 普通用户 7d，支持无感续签
+- ✅ **数据库持久化**: 新建 `refresh_tokens` 表存储 refresh token 的 SHA-256 哈希，支持主动撤销、多端管理、过期清理
+- ✅ **原子化 Token 轮换**: 使用 `SELECT ... FOR UPDATE` + `DELETE` 事务防止 Refresh Token 重放攻击（TOCTOU 竞态修复）
+- ✅ **JWT Secret 持久化**: 密钥写入 `data/.jwt-secret` 文件，确保服务重启后 token 不失效
+- ✅ **定时清理**: 每小时自动清除过期 refresh token 记录
+
+#### 🍪 HttpOnly Cookie 安全迁移
+- ✅ **彻底替代 localStorage 存储 token**: 所有认证令牌转移至 HttpOnly Cookie，前端 JS 无法直接访问
+- ✅ **前端 `adminToken` 语义变更**: 从存储实际 token 改为仅存储用户名作为登录状态标识
+- ✅ **Axios 全局配置**: `withCredentials: true` + 401 自动刷新拦截器
+- ✅ **Cookie-Parser 集成**: 后端引入 `cookie-parser` 中间件解析 HttpOnly Cookie
+- ✅ **SameSite=Lax + Secure**: 生产环境启用 Secure 标志，防止 CSRF 与中间人攻击
+
+#### 🛡️ 权限隔离与数据安全
+- ✅ **排行榜数据泄露修复**: 普通用户仅可查看自己账号的排名，管理员可查看全部
+- ✅ **accounts 表外键约束**: 新增 `fk_accounts_username` 外键，保障账号数据与用户表的引用一致性
+- ✅ **CORS 收紧**: 从通配符改为动态来源校验（支持 localhost / 内网 IP / 自定义域名）
+- ✅ **CORS 方法补全**: `Access-Control-Allow-Methods` 增加 `PUT`
+
+#### 🔄 前端认证链路重构
+- ✅ **统一 `clearAuth()` 函数**: 集中清理后端 Cookie + 本地 `adminToken` + `currentAccountId` + `current_user`
+- ✅ **Vue Router 守卫适配**: 使用 Cookie 认证替代 header token 验证
+- ✅ **Login.vue 免责声明**: 拒绝时正确调用 `clearAuth()` 清除残留 Cookie
+- ✅ **Socket.IO Cookie 认证**: 服务端解析 `socket.handshake.headers.cookie` 中的 access_token
+- ✅ **Socket.IO 重连认证**: `connect_error` 检测 Unauthorized 后自动刷新 token 并重连
+- ✅ **全局 Axios 统一**: `SystemLogs.vue` / `AnalyticsEcharts.vue` 从 bare `axios` 迁移至 `api` 实例
+- ✅ **UserInfoCard.vue 登出优化**: 统一调用 `clearAuth()`，移除冗余的手动清理代码
+
+#### 📦 数据库迁移
+- ✅ **008-refresh-tokens.sql**: 新建 `refresh_tokens` 表（id, username, token_hash, role, device_info, created_at, expires_at），含 `idx_rt_token_hash` 和 `idx_rt_username` 索引
+- ✅ **accounts 外键**: 自动清理孤立记录后添加 `ON DELETE SET NULL ON UPDATE CASCADE` 外键约束
+
+#### 📁 新增/修改文件
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `core/src/services/jwt-service.js` | **NEW** | JWT 签发/验证、Refresh Token 管理、Cookie 操作 |
+| `core/src/database/migrations/008-refresh-tokens.sql` | **NEW** | Refresh Token 表迁移脚本 |
+| `core/src/controllers/admin.js` | 重大修改 | 全面替换认证中间件、新增 refresh/logout 端点、Socket.IO Cookie 认证 |
+| `core/src/services/mysql-db.js` | 修改 | 执行新迁移、添加外键约束 |
+| `core/src/models/user-store.js` | 修改 | 新增 `getUserInfo()` 方法 |
+| `web/src/utils/auth.ts` | 重大修改 | `clearAuth()` 统一清理、`adminToken` 语义变更 |
+| `web/src/api/index.ts` | 重大修改 | `withCredentials` + 401 刷新拦截器 |
+| `web/src/router/index.ts` | 修改 | Cookie 认证守卫 |
+| `web/src/views/Login.vue` | 修改 | Cookie 登录流程 + 免责清理 |
+| `web/src/stores/status.ts` | 修改 | Socket.IO Cookie 认证 + 重连刷新 |
+| `web/src/components/UserInfoCard.vue` | 修改 | 统一调用 `clearAuth()` |
+| `web/src/views/SystemLogs.vue` | 修改 | 迁移至 `api` 实例 |
+| `web/src/views/AnalyticsEcharts.vue` | 修改 | 迁移至 `api` 实例 |
+
+#### 🔧 依赖新增
+- `jsonwebtoken` — JWT 签发与验证
+- `cookie-parser` — Express Cookie 解析中间件
+
+---
+
 ### v4.3.0 - 日志系统重构与全栈架构优化 (2026-03-06)
 
 #### ⚡ 核心性能与日志模块
@@ -974,15 +1033,16 @@ connect_error → 识别 "Unauthorized" / "jwt expired"
 ## 📝 更新说明
 
 **最后更新**: 2026-03-07  
-**版本**: v4.2.0  
+**版本**: v4.4.0  
 **状态**: ✅ 生产就绪
 
 **更新内容**:
-- ✅ Chrome 闪烁修复（glass-panel / mesh-orb / HelpButton）
-- ✅ 好友列表按钮 UI 统一（6 种颜色变体）
-- ✅ 公告弹窗品牌信息注入
-- ✅ Tooltip 推荐标签颜色修复
-- ✅ 性能模式全面增强
+- ✅ JWT + Refresh Token 双令牌认证体系
+- ✅ HttpOnly Cookie 安全迁移（替代 localStorage）
+- ✅ 排行榜数据泄露修复 + accounts 外键约束
+- ✅ CORS 收紧 + Socket.IO Cookie 认证
+- ✅ 前端认证链路全面重构
+- ✅ 原子化 Token 轮换（防重放攻击）
 - ✅ **安全审计全量修复**（12 项 H/M/L，详见上方清单）
 - ✅ 前端认证状态分层管理（clearLocalAuthState / clearAuth）
 - ✅ 全局 userRequired 中间件 + PUBLIC_PATHS 白名单
