@@ -7,14 +7,44 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { execFile } = require('child_process');
+const { getLogDir } = require('../config/runtime-paths');
 
 const router = express.Router();
+const PROJECT_ROOT = path.join(__dirname, '../../..');
+const AI_AUTOSTART_SCRIPT = path.join(PROJECT_ROOT, 'scripts', 'service', 'ai-autostart.js');
 
 const CONFIG = {
   openVikingUrl: process.env.OPENVIKING_URL || 'http://localhost:5000',
-  logDir: path.join(__dirname, '..', 'logs'),
+  logDir: getLogDir(),
+  aiAutostartScript: AI_AUTOSTART_SCRIPT,
   maxLogLines: 1000,
 };
+
+function runAiAutostart(action, res) {
+  const actionLabel = {
+    start: '启动',
+    stop: '停止',
+    restart: '重启',
+  }[action] || action;
+  execFile(process.execPath, [CONFIG.aiAutostartScript, action], {
+    cwd: PROJECT_ROOT,
+  }, (error, stdout, stderr) => {
+    if (error) {
+      res.status(500).json({
+        success: false,
+        error: stderr || error.message,
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: `AI 服务${actionLabel}指令已发送`,
+      output: stdout,
+    });
+  });
+}
 
 /**
  * 获取 AI 服务状态
@@ -35,7 +65,7 @@ router.get('/status', async (req, res) => {
     };
     
     // 检查守护进程
-    const pidFile = path.join(__dirname, '..', 'logs', 'ai-daemon.pid');
+    const pidFile = path.join(CONFIG.logDir, 'ai-daemon.pid');
     if (fs.existsSync(pidFile)) {
       const pid = Number.parseInt(fs.readFileSync(pidFile, 'utf8'));
       try {
@@ -136,23 +166,7 @@ router.get('/logs/stream', (req, res) => {
  */
 router.post('/restart', async (req, res) => {
   try {
-    const { exec } = require('child_process');
-    
-    exec('node ai-autostart.js restart', (error, stdout, stderr) => {
-      if (error) {
-        res.status(500).json({
-          success: false,
-          error: error.message,
-        });
-        return;
-      }
-      
-      res.json({
-        success: true,
-        message: 'AI 服务重启指令已发送',
-        output: stdout,
-      });
-    });
+    runAiAutostart('restart', res);
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -166,23 +180,7 @@ router.post('/restart', async (req, res) => {
  */
 router.post('/stop', async (req, res) => {
   try {
-    const { exec } = require('child_process');
-    
-    exec('node ai-autostart.js stop', (error, stdout, stderr) => {
-      if (error) {
-        res.status(500).json({
-          success: false,
-          error: error.message,
-        });
-        return;
-      }
-      
-      res.json({
-        success: true,
-        message: 'AI 服务停止指令已发送',
-        output: stdout,
-      });
-    });
+    runAiAutostart('stop', res);
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -196,23 +194,7 @@ router.post('/stop', async (req, res) => {
  */
 router.post('/start', async (req, res) => {
   try {
-    const { exec } = require('child_process');
-    
-    exec('node ai-autostart.js start', (error, stdout, stderr) => {
-      if (error) {
-        res.status(500).json({
-          success: false,
-          error: error.message,
-        });
-        return;
-      }
-      
-      res.json({
-        success: true,
-        message: 'AI 服务启动指令已发送',
-        output: stdout,
-      });
-    });
+    runAiAutostart('start', res);
   } catch (error) {
     res.status(500).json({
       success: false,

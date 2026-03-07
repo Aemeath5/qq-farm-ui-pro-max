@@ -11,6 +11,9 @@ const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
+const LOG_DIR = path.join(PROJECT_ROOT, 'logs');
+
 // 配置
 const CONFIG = {
   openVikingPort: process.env.OPENVIKING_PORT || 5000,
@@ -36,12 +39,11 @@ function log(message, type = 'INFO') {
   console.log(logMessage);
 
   // 写入日志文件
-  const logDir = path.join(__dirname, '..', 'logs');
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
   }
 
-  const logFile = path.join(logDir, 'ai-services.log');
+  const logFile = path.join(LOG_DIR, 'ai-services.log');
   fs.appendFileSync(logFile, logMessage + '\n');
 }
 

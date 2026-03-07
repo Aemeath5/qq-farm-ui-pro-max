@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const process = require('node:process');
-const { ensureDataDir } = require('../config/runtime-paths');
+const { ensureLogDir } = require('../config/runtime-paths');
 
 let winston = null;
 try {
@@ -43,10 +43,7 @@ let fallbackLogDir = null;
 
 function ensureFallbackLogDir() {
     if (fallbackLogDir) return fallbackLogDir;
-    const dataDir = ensureDataDir();
-    const dir = path.join(dataDir, 'logs');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fallbackLogDir = dir;
+    fallbackLogDir = ensureLogDir();
     return fallbackLogDir;
 }
 
@@ -100,9 +97,7 @@ function getRootLogger() {
         return rootLogger;
     }
 
-    const dataDir = ensureDataDir();
-    const logDir = path.join(dataDir, 'logs');
-    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    const logDir = ensureLogDir();
 
     const level = String(process.env.LOG_LEVEL || 'info').toLowerCase();
     const { combine, timestamp, errors, json, colorize, printf } = winston.format;

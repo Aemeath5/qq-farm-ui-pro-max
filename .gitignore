@@ -17,6 +17,7 @@ web/stats.html
 
 # Runtime data
 data/
+core/data
 core/data/
 
 # Logs
@@ -92,4 +93,5 @@ core/pnpm-lock.yaml
 web/pnpm-lock.yaml
 deploy/offline/
 services/openviking/ov.conf
+scripts/service/logs
 scripts/service/logs/

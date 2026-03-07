@@ -12,6 +12,10 @@ function getResourcePath(...segments) {
     return path.join(getResourceRoot(), ...segments);
 }
 
+function getProjectRootForWritable() {
+    return isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '../../..');
+}
+
 function getAppRootForWritable() {
     return isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '../..');
 }
@@ -30,6 +34,20 @@ function getDataFile(filename) {
     return path.join(getDataDir(), filename);
 }
 
+function getLogDir() {
+    return path.join(getProjectRootForWritable(), 'logs');
+}
+
+function ensureLogDir() {
+    const dir = getLogDir();
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
+function getLogFile(filename) {
+    return path.join(getLogDir(), filename);
+}
+
 function getShareFilePath() {
     return path.join(getAppRootForWritable(), 'share.txt');
 }
@@ -40,5 +58,8 @@ module.exports = {
     getDataDir,
     getDataFile,
     ensureDataDir,
+    getLogDir,
+    ensureLogDir,
+    getLogFile,
     getShareFilePath,
 };

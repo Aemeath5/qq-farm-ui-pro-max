@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getDataDir } = require('../config/runtime-paths');
+const { ensureLogDir } = require('../config/runtime-paths');
 
 /** 单个日志文件最大字节数（默认 2MB） */
 const MAX_LOG_SIZE = 2 * 1024 * 1024;
@@ -20,7 +20,7 @@ const LOG_FILENAME = 'user-actions.log';
  * @returns {string} 日志目录绝对路径
  */
 function getLogsDir() {
-    return path.join(getDataDir(), 'logs');
+    return ensureLogDir();
 }
 
 /**

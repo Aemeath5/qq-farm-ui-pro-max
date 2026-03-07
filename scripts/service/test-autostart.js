@@ -4,11 +4,13 @@
  * 自动启动功能测试脚本
  */
 
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const LOG_FILE = path.join(__dirname, 'logs', 'ai-autostart-test.log');
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
+const AI_AUTOSTART_SCRIPT = path.join(__dirname, 'ai-autostart.js');
+const LOG_FILE = path.join(PROJECT_ROOT, 'logs', 'ai-autostart-test.log');
 
 function log(message) {
   const timestamp = new Date().toISOString();
@@ -82,11 +84,11 @@ async function runTest() {
   console.log('📌 测试 3: 测试自动启动功能');
   try {
     console.log('  正在启动守护进程...');
-    execSync('node ai-autostart.js start', { stdio: 'pipe' });
+    execFileSync(process.execPath, [AI_AUTOSTART_SCRIPT, 'start'], { stdio: 'pipe', cwd: PROJECT_ROOT });
     await sleep(5000); // 等待 5 秒
 
     // 检查进程
-    const isRunning = execSync('node ai-autostart.js status', { encoding: 'utf8' });
+    const isRunning = execFileSync(process.execPath, [AI_AUTOSTART_SCRIPT, 'status'], { encoding: 'utf8', cwd: PROJECT_ROOT });
     if (isRunning.includes('正在运行')) {
       console.log('  ✅ 守护进程启动成功');
     } else {
@@ -120,17 +122,16 @@ async function runTest() {
   // 测试 5: 检查日志
   console.log('📌 测试 5: 检查日志系统');
   const logFiles = [
-    'logs/ai-services.log',
-    'logs/ai-autostart.log',
+    path.join(PROJECT_ROOT, 'logs', 'ai-services.log'),
+    path.join(PROJECT_ROOT, 'logs', 'ai-autostart.log'),
   ];
 
   for (const logFile of logFiles) {
-    const filePath = path.join(__dirname, logFile);
-    if (fs.existsSync(filePath)) {
-      const stats = fs.statSync(filePath);
-      console.log(`  ✅ ${logFile} (${stats.size} bytes)`);
+    if (fs.existsSync(logFile)) {
+      const stats = fs.statSync(logFile);
+      console.log(`  ✅ ${path.relative(PROJECT_ROOT, logFile)} (${stats.size} bytes)`);
     } else {
-      console.log(`  ℹ️  ${logFile} (不存在，正常)`);
+      console.log(`  ℹ️  ${path.relative(PROJECT_ROOT, logFile)} (不存在，正常)`);
     }
   }
   console.log('');
@@ -138,10 +139,10 @@ async function runTest() {
   // 测试 6: 测试服务停止
   console.log('📌 测试 6: 测试服务停止');
   try {
-    execSync('node ai-autostart.js stop', { stdio: 'pipe' });
+    execFileSync(process.execPath, [AI_AUTOSTART_SCRIPT, 'stop'], { stdio: 'pipe', cwd: PROJECT_ROOT });
     await sleep(2000);
 
-    const status = execSync('node ai-autostart.js status', { encoding: 'utf8' });
+    const status = execFileSync(process.execPath, [AI_AUTOSTART_SCRIPT, 'status'], { encoding: 'utf8', cwd: PROJECT_ROOT });
     if (status.includes('未运行')) {
       console.log('  ✅ 服务停止成功');
     } else {

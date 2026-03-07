@@ -9,26 +9,29 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
 const AI_DAEMON_SCRIPT = path.join(__dirname, 'ai-services-daemon.js');
-const LOG_FILE = path.join(__dirname, 'logs', 'ai-autostart.log');
+const LOG_DIR = path.join(PROJECT_ROOT, 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'ai-autostart.log');
+
+function ensureLogDir() {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+}
 
 function log(message) {
   const timestamp = new Date().toISOString();
   const logMessage = `[${timestamp}] ${message}`;
   console.log(logMessage);
   
-  // 确保日志目录存在
-  const logDir = path.dirname(LOG_FILE);
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
-  }
-  
+  ensureLogDir();
   fs.appendFileSync(LOG_FILE, logMessage + '\n');
 }
 
 // 检查是否已启动
 function isDaemonRunning() {
-  const pidFile = path.join(__dirname, 'logs', 'ai-daemon.pid');
+  const pidFile = path.join(LOG_DIR, 'ai-daemon.pid');
   if (!fs.existsSync(pidFile)) {
     return false;
   }
@@ -56,14 +59,15 @@ function startDaemon() {
     
     log('[AI 服务] 正在启动 AI 服务守护进程...');
     
-    const nodeProcess = spawn('node', [AI_DAEMON_SCRIPT], {
+    const nodeProcess = spawn(process.execPath, [AI_DAEMON_SCRIPT], {
       detached: true,
       stdio: ['ignore', 'ignore', 'ignore'],
-      cwd: __dirname,
+      cwd: PROJECT_ROOT,
     });
     
     // 保存 PID
-    const pidFile = path.join(__dirname, 'logs', 'ai-daemon.pid');
+    ensureLogDir();
+    const pidFile = path.join(LOG_DIR, 'ai-daemon.pid');
     fs.writeFileSync(pidFile, nodeProcess.pid.toString());
     
     log(`[AI 服务] 守护进程已启动 (PID: ${nodeProcess.pid})`);
@@ -79,7 +83,7 @@ function startDaemon() {
 
 // 停止守护进程
 function stopDaemon() {
-  const pidFile = path.join(__dirname, 'logs', 'ai-daemon.pid');
+  const pidFile = path.join(LOG_DIR, 'ai-daemon.pid');
   if (!fs.existsSync(pidFile)) {
     log('[AI 服务] 守护进程未运行');
     return;
