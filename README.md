@@ -249,10 +249,16 @@ ADMIN_PASSWORD='你的强密码' pnpm dev:core
 
 # 🐳 Docker 部署完整指南（整合版）
 
+部署文档入口：
+
+- 海外 / 官方源服务器：[deploy/README.md](deploy/README.md)
+- 国内网络服务器：[deploy/README.cn.md](deploy/README.cn.md)
+
 ## 🚀 场景 1：全新服务器完整部署
 
 标准部署栈固定为 4 个服务：`主程序 + MySQL + Redis + ipad860`。后续版本主要更新主程序；MySQL、Redis、ipad860 默认复用已部署版本。
-如果官方 Docker Hub 网络不稳定，一键脚本会自动尝试 `docker.m.daocloud.io`、`dockerpull.com`、`docker.1panel.live` 等镜像源，并将镜像回 tag 到正式名称。若业务镜像仍不可拉取，脚本会自动下载 GitHub 源码包并在服务器本地构建所需镜像。
+本节默认假设服务器可以直接访问 GitHub 和 Docker Hub 官方源。一键脚本默认从 GitHub 官方地址下载部署文件，并从 Docker Hub 官方仓库拉取镜像；若主程序镜像或 `ipad860` 镜像拉取失败，脚本会回退到下载当前仓库源码包并在服务器本地构建。
+如果你的服务器在中国大陆网络环境，优先查看 [deploy/README.cn.md](deploy/README.cn.md)，里面单独整理了离线包和预载镜像的部署方式。
 
 ### 一键脚本
 
@@ -282,7 +288,6 @@ APP_IMAGE=smdk000/qq-farm-bot-ui:latest
 MYSQL_IMAGE=mysql:8.0
 REDIS_IMAGE=redis:7-alpine
 IPAD860_IMAGE=smdk000/ipad860:latest
-IMAGE_MIRROR_PREFIXES=docker.m.daocloud.io,dockerpull.com,docker.1panel.live
 ```
 
 ### 手动分步骤部署
@@ -322,6 +327,9 @@ bash fresh-install.sh --non-interactive
 ```bash
 cd /opt/qq-farm-bot-current
 bash update-app.sh
+
+# 如需切到指定版本
+bash update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.10
 ```
 
 ## 📊 验证部署成功
@@ -557,6 +565,7 @@ Docker 会自动选择适合您系统架构的镜像版本。
 - **Docker Hub**: https://hub.docker.com/r/smdk000/qq-farm-bot-ui
 - **GitHub Packages**: https://github.com/users/smdk000/packages/container/package/qq-farm-bot-ui
 - **部署指南**: [deploy/README.md](deploy/README.md)
+- **国内网络部署**: [deploy/README.cn.md](deploy/README.cn.md)
 - **故障排查**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 - **配置模板**: [docs/CONFIG_TEMPLATES.md](docs/CONFIG_TEMPLATES.md)
 

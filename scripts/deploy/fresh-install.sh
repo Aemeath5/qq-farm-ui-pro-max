@@ -22,7 +22,6 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 COMPOSE_PULL_RETRIES="${COMPOSE_PULL_RETRIES:-3}"
 PULL_RETRY_DELAY_SECONDS="${PULL_RETRY_DELAY_SECONDS:-10}"
-IMAGE_MIRROR_PREFIXES="${IMAGE_MIRROR_PREFIXES:-docker.m.daocloud.io,dockerpull.com,docker.1panel.live}"
 
 print_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 print_success() { echo -e "${GREEN}[OK]${NC} $1"; }
@@ -265,20 +264,6 @@ get_required_images() {
         "${IPAD860_IMAGE:-smdk000/ipad860:latest}"
 }
 
-mirror_ref_for_image() {
-    local prefix="$1"
-    local image="$2"
-    local normalized="${prefix#http://}"
-    normalized="${normalized#https://}"
-    normalized="${normalized%/}"
-
-    if [[ "${image}" != */* ]]; then
-        printf '%s/library/%s\n' "${normalized}" "${image}"
-    else
-        printf '%s/%s\n' "${normalized}" "${image}"
-    fi
-}
-
 pull_one_image() {
     local image="$1"
     local attempt=1
@@ -337,13 +322,13 @@ build_image_from_source() {
         */qq-farm-bot-ui:*|qq-farm-bot-ui:*|smdk000/qq-farm-bot-ui:*)
             context="${SOURCE_CACHE_DIR}"
             dockerfile="${SOURCE_CACHE_DIR}/core/Dockerfile"
-            pull_image_with_mirrors "node:20-alpine"
+            ensure_official_image "node:20-alpine" || return 1
             ;;
         */ipad860:*|ipad860:*|smdk000/ipad860:*)
             context="${SOURCE_CACHE_DIR}/services/ipad860"
             dockerfile="${SOURCE_CACHE_DIR}/services/ipad860/Dockerfile"
-            pull_image_with_mirrors "golang:1.24-bookworm"
-            pull_image_with_mirrors "ubuntu:24.04"
+            ensure_official_image "golang:1.24-bookworm" || return 1
+            ensure_official_image "ubuntu:24.04" || return 1
             ;;
         *)
             return 1
@@ -355,29 +340,26 @@ build_image_from_source() {
     "${DOCKER[@]}" build -t "${image}" -f "${dockerfile}" "${context}"
 }
 
-pull_image_with_mirrors() {
+ensure_official_image() {
     local image="$1"
-    print_info "拉取镜像: ${image}"
+    print_info "拉取官方镜像: ${image}"
 
     if pull_one_image "${image}"; then
         return 0
     fi
 
-    local old_ifs="${IFS}"
-    IFS=','
-    for prefix in ${IMAGE_MIRROR_PREFIXES}; do
-        prefix="$(printf '%s' "${prefix}" | xargs)"
-        [ -n "${prefix}" ] || continue
-        local mirror_image
-        mirror_image="$(mirror_ref_for_image "${prefix}" "${image}")"
-        print_warning "官方源拉取失败，尝试镜像源: ${mirror_image}"
-        if pull_one_image "${mirror_image}"; then
-            "${DOCKER[@]}" tag "${mirror_image}" "${image}"
-            IFS="${old_ifs}"
-            return 0
-        fi
-    done
-    IFS="${old_ifs}"
+    print_error "官方镜像拉取失败: ${image}"
+    print_error "请确认服务器可正常访问 Docker Hub，或手动提前导入该镜像。"
+    return 1
+}
+
+pull_image_or_build() {
+    local image="$1"
+    print_info "拉取官方镜像: ${image}"
+
+    if pull_one_image "${image}"; then
+        return 0
+    fi
 
     if build_image_from_source "${image}"; then
         return 0
@@ -395,9 +377,9 @@ pull_required_images() {
     local image
     while IFS= read -r image; do
         [ -n "${image}" ] || continue
-        pull_image_with_mirrors "${image}" || {
+        pull_image_or_build "${image}" || {
             print_error "镜像拉取最终失败: ${image}"
-            print_error "可通过 IMAGE_MIRROR_PREFIXES 指定更多镜像源，或在 .env 中覆盖镜像地址。"
+            print_error "请检查 GitHub / Docker Hub 官方网络连通性，或在 .env 中覆盖镜像地址。"
             return 1
         }
     done < <(get_required_images)

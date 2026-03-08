@@ -9,6 +9,11 @@
 
 后续版本迭代默认只更新主程序，MySQL / Redis / ipad860 复用现有部署。
 
+文档入口：
+
+- 标准部署：[deploy/README.md](README.md)
+- 国内网络部署：[deploy/README.cn.md](README.cn.md)
+
 ## 环境要求
 
 - Docker 24+
@@ -31,8 +36,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/m
 - 在 `/opt/YYYY_MM_DD/qq-farm-bot` 创建部署目录，并维护 `/opt/qq-farm-bot-current` 当前版本链接
 - 下载 `docker-compose.yml`、`.env.example`、初始化 SQL、README、一键部署/更新脚本
 - 启动全部 4 个容器并等待健康检查
-- 官方源拉取失败时自动切换镜像源并回 tag 到正式镜像名
-- 业务镜像仍不可拉取时，自动下载 GitHub 源码包并在服务器本地构建
+- 默认使用 GitHub 官方源和 Docker Hub 官方仓库
+- 主程序镜像或 `ipad860` 镜像仍不可拉取时，自动下载 GitHub 源码包并在服务器本地构建
 
 无交互部署示例：
 
@@ -48,7 +53,6 @@ APP_IMAGE=smdk000/qq-farm-bot-ui:latest
 MYSQL_IMAGE=mysql:8.0
 REDIS_IMAGE=redis:7-alpine
 IPAD860_IMAGE=smdk000/ipad860:latest
-IMAGE_MIRROR_PREFIXES=docker.m.daocloud.io,dockerpull.com,docker.1panel.live
 ```
 
 ### 手动部署
@@ -88,6 +92,9 @@ bash fresh-install.sh --non-interactive
 ```bash
 cd /opt/qq-farm-bot-current
 bash update-app.sh
+
+# 如需切到指定版本
+bash update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.10
 ```
 
 ## 验证部署
