@@ -10,11 +10,32 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import BaseTooltip from '@/components/ui/BaseTooltip.vue'
+import { getThemeBackgroundPreset, getThemeOption, LOGIN_BACKGROUND_PRESETS, type LoginBackgroundPreset, UI_BACKGROUND_SCOPE_OPTIONS } from '@/constants/ui-appearance'
 import { useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useFarmStore } from '@/stores/farm'
 import { useFriendStore } from '@/stores/friend'
 import { type ReportLogEntry, useSettingStore } from '@/stores/setting'
+
+const REPORT_HISTORY_VIEW_STORAGE_KEY = 'qq-farm-bot:report-history-view:v1'
+
+function loadReportHistoryViewPreferences() {
+  try {
+    const raw = localStorage.getItem(REPORT_HISTORY_VIEW_STORAGE_KEY)
+    if (!raw)
+      return { mode: 'all', status: 'all', keyword: '', sortOrder: 'desc' as 'desc' | 'asc', pageSize: 10 }
+    const parsed = JSON.parse(raw)
+    const mode = ['all', 'test', 'hourly', 'daily'].includes(parsed?.mode) ? parsed.mode : 'all'
+    const status = ['all', 'success', 'failed'].includes(parsed?.status) ? parsed.status : 'all'
+    const sortOrder = ['asc', 'desc'].includes(parsed?.sortOrder) ? parsed.sortOrder : 'desc'
+    const pageSize = [10, 20, 50, 100].includes(Number(parsed?.pageSize)) ? Number(parsed.pageSize) : 10
+    const keyword = String(parsed?.keyword || '').slice(0, 100)
+    return { mode, status, keyword, sortOrder, pageSize }
+  }
+  catch {
+    return { mode: 'all', status: 'all', keyword: '', sortOrder: 'desc' as 'desc' | 'asc', pageSize: 10 }
+  }
+}
 
 const settingStore = useSettingStore()
 const appStore = useAppStore()
@@ -22,8 +43,9 @@ appStore.fetchUIConfig()
 const accountStore = useAccountStore()
 const farmStore = useFarmStore()
 const friendStore = useFriendStore()
+const reportHistoryViewPrefs = loadReportHistoryViewPreferences()
 
-const { settings, loading, reportLogs, reportLogPagination } = storeToRefs(settingStore)
+const { settings, loading, reportLogs, reportLogPagination, reportLogStats } = storeToRefs(settingStore)
 const { currentAccountId, accounts } = storeToRefs(accountStore)
 const { seeds } = storeToRefs(farmStore)
 const { friends } = storeToRefs(friendStore)
@@ -45,12 +67,62 @@ const selectedReportLogIds = ref<number[]>([])
 const reportDetailVisible = ref(false)
 const reportDetailItem = ref<ReportLogEntry | null>(null)
 const reportFilters = ref({
-  mode: 'all',
-  status: 'all',
+  mode: reportHistoryViewPrefs.mode,
+  status: reportHistoryViewPrefs.status,
 })
-const reportKeyword = ref('')
-const reportSortOrder = ref<'desc' | 'asc'>('desc')
-const reportPageSize = ref(10)
+const reportKeyword = ref(reportHistoryViewPrefs.keyword)
+const reportSortOrder = ref<'desc' | 'asc'>(reportHistoryViewPrefs.sortOrder)
+const reportPageSize = ref(reportHistoryViewPrefs.pageSize)
+const reportHistoryStatsCards = computed(() => [
+  {
+    key: 'total',
+    label: '当前结果总数',
+    value: reportLogStats.value.total,
+    tone: 'text-gray-900 dark:text-gray-100',
+    bg: 'bg-slate-100/80 dark:bg-slate-800/40',
+    active: reportFilters.value.mode === 'all' && reportFilters.value.status === 'all',
+  },
+  {
+    key: 'success',
+    label: '成功',
+    value: reportLogStats.value.successCount,
+    tone: 'text-emerald-700 dark:text-emerald-300',
+    bg: 'bg-emerald-100/80 dark:bg-emerald-900/30',
+    active: reportFilters.value.status === 'success',
+  },
+  {
+    key: 'failed',
+    label: '失败',
+    value: reportLogStats.value.failedCount,
+    tone: 'text-red-700 dark:text-red-300',
+    bg: 'bg-red-100/80 dark:bg-red-900/30',
+    active: reportFilters.value.status === 'failed',
+  },
+  {
+    key: 'test',
+    label: '测试汇报',
+    value: reportLogStats.value.testCount,
+    tone: 'text-sky-700 dark:text-sky-300',
+    bg: 'bg-sky-100/80 dark:bg-sky-900/30',
+    active: reportFilters.value.mode === 'test',
+  },
+  {
+    key: 'hourly',
+    label: '小时汇报',
+    value: reportLogStats.value.hourlyCount,
+    tone: 'text-amber-700 dark:text-amber-300',
+    bg: 'bg-amber-100/80 dark:bg-amber-900/30',
+    active: reportFilters.value.mode === 'hourly',
+  },
+  {
+    key: 'daily',
+    label: '日报',
+    value: reportLogStats.value.dailyCount,
+    tone: 'text-violet-700 dark:text-violet-300',
+    bg: 'bg-violet-100/80 dark:bg-violet-900/30',
+    active: reportFilters.value.mode === 'daily',
+  },
+])
 
 // === 危险频率拦截警告 ===
 const timeWarningVisible = computed(() => {
@@ -229,6 +301,58 @@ const modalConfig = ref({
   type: 'primary' as 'primary' | 'danger',
   isAlert: true,
 })
+const DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY = 30
+const DEFAULT_LOGIN_BACKGROUND_BLUR = 2
+const DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY = 60
+const DEFAULT_APP_BACKGROUND_BLUR = 8
+const loginBackgroundPresets = LOGIN_BACKGROUND_PRESETS
+
+const loginPreviewVisible = ref(false)
+const loginPreviewLoading = ref(false)
+const loginPreviewLoadFailed = ref(false)
+const backgroundSaving = ref(false)
+const backgroundUploading = ref(false)
+const backgroundFileInput = ref<HTMLInputElement | null>(null)
+let loginPreviewRequestId = 0
+
+const loginPreviewUsesCustomBackground = computed(() => {
+  return !!appStore.loginBackground.trim() && !loginPreviewLoadFailed.value
+})
+
+const loginPreviewBackgroundStyle = computed(() => {
+  if (loginPreviewUsesCustomBackground.value) {
+    return {
+      backgroundImage: `url(${appStore.loginBackground.trim()})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    }
+  }
+
+  return {
+    background: 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)',
+  }
+})
+
+const loginPreviewMaskStyle = computed(() => ({
+  backgroundColor: `rgba(0, 0, 0, ${appStore.loginBackgroundOverlayOpacity / 100})`,
+  backdropFilter: `blur(${appStore.loginBackgroundBlur}px)`,
+  WebkitBackdropFilter: `blur(${appStore.loginBackgroundBlur}px)`,
+}))
+const appScenePreviewMaskStyle = computed(() => ({
+  backgroundColor: `rgba(8, 12, 24, ${appStore.appBackgroundOverlayOpacity / 100})`,
+  backdropFilter: `blur(${appStore.appBackgroundBlur}px)`,
+  WebkitBackdropFilter: `blur(${appStore.appBackgroundBlur}px)`,
+}))
+const currentThemeOption = computed(() => getThemeOption(appStore.colorTheme))
+const currentThemeBackgroundPreset = computed(() => getThemeBackgroundPreset(appStore.colorTheme))
+const orderedLoginBackgroundPresets = computed(() => {
+  const currentThemeKey = appStore.colorTheme
+  return [...loginBackgroundPresets].sort((a, b) => {
+    const aRank = a.themeKey === currentThemeKey ? 0 : (a.builtIn ? 1 : 2)
+    const bRank = b.themeKey === currentThemeKey ? 0 : (b.builtIn ? 1 : 2)
+    return aRank - bRank
+  })
+})
 
 function showAlert(message: string, type: 'primary' | 'danger' = 'primary') {
   modalConfig.value = {
@@ -239,6 +363,238 @@ function showAlert(message: string, type: 'primary' | 'danger' = 'primary') {
   }
   modalVisible.value = true
 }
+
+function openLoginPreview() {
+  loginPreviewVisible.value = true
+}
+
+function isSelectedLoginBackgroundPreset(preset: LoginBackgroundPreset) {
+  return preset.url.trim() === appStore.loginBackground.trim()
+}
+
+function applyBackgroundPreset(preset: LoginBackgroundPreset) {
+  appStore.loginBackground = preset.url
+  if (preset.themeKey) {
+    appStore.colorTheme = preset.themeKey
+  }
+  appStore.loginBackgroundOverlayOpacity = preset.overlayOpacity
+  appStore.loginBackgroundBlur = preset.blur
+  appStore.appBackgroundOverlayOpacity = preset.appOverlayOpacity
+  appStore.appBackgroundBlur = preset.appBlur
+  if (!preset.url) {
+    loginPreviewLoadFailed.value = false
+  }
+}
+
+function applyCurrentThemeBackgroundPreset() {
+  applyBackgroundPreset(currentThemeBackgroundPreset.value)
+}
+
+async function saveLoginAppearance() {
+  backgroundSaving.value = true
+  try {
+    await appStore.setUIConfig({
+      colorTheme: appStore.colorTheme,
+      loginBackground: appStore.loginBackground.trim(),
+      backgroundScope: appStore.backgroundScope,
+      loginBackgroundOverlayOpacity: appStore.loginBackgroundOverlayOpacity,
+      loginBackgroundBlur: appStore.loginBackgroundBlur,
+      appBackgroundOverlayOpacity: appStore.appBackgroundOverlayOpacity,
+      appBackgroundBlur: appStore.appBackgroundBlur,
+    })
+    showAlert('登录页背景设置已保存')
+  }
+  catch (e: any) {
+    showAlert(`保存失败: ${e.message || '未知错误'}`, 'danger')
+  }
+  finally {
+    backgroundSaving.value = false
+  }
+}
+
+async function restoreDefaultLoginAppearance() {
+  appStore.loginBackground = ''
+  appStore.backgroundScope = 'login_only'
+  appStore.loginBackgroundOverlayOpacity = DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY
+  appStore.loginBackgroundBlur = DEFAULT_LOGIN_BACKGROUND_BLUR
+  appStore.appBackgroundOverlayOpacity = DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY
+  appStore.appBackgroundBlur = DEFAULT_APP_BACKGROUND_BLUR
+  loginPreviewLoadFailed.value = false
+  await saveLoginAppearance()
+}
+
+function triggerBackgroundUpload() {
+  backgroundFileInput.value?.click()
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+      }
+      else {
+        reject(new Error('图片读取失败'))
+      }
+    }
+    reader.onerror = () => reject(new Error('图片读取失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function loadImageElement(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('图片解码失败'))
+    img.src = src
+  })
+}
+
+async function compressLoginBackgroundImage(file: File) {
+  const source = await readFileAsDataUrl(file)
+  const img = await loadImageElement(source)
+  const naturalWidth = img.naturalWidth || img.width
+  const naturalHeight = img.naturalHeight || img.height
+  const maxEdge = 2200
+  const scale = Math.min(1, maxEdge / Math.max(naturalWidth, naturalHeight))
+  const width = Math.max(1, Math.round(naturalWidth * scale))
+  const height = Math.max(1, Math.round(naturalHeight * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx)
+    throw new Error('当前浏览器不支持图片压缩')
+
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(img, 0, 0, width, height)
+
+  const candidates: Array<{ mime: string, quality?: number }> = [
+    { mime: 'image/webp', quality: 0.88 },
+    { mime: 'image/webp', quality: 0.76 },
+    { mime: 'image/jpeg', quality: 0.82 },
+    { mime: 'image/jpeg', quality: 0.7 },
+  ]
+
+  let fallbackDataUrl = ''
+  for (const candidate of candidates) {
+    try {
+      const dataUrl = canvas.toDataURL(candidate.mime, candidate.quality)
+      if (!fallbackDataUrl) {
+        fallbackDataUrl = dataUrl
+      }
+      if (dataUrl.length <= 7_000_000) {
+        return {
+          dataUrl,
+          mimeType: dataUrl.match(/^data:([^;]+);/i)?.[1] || candidate.mime,
+        }
+      }
+    }
+    catch {
+      // ignore unsupported mime types and try the next candidate
+    }
+  }
+
+  if (!fallbackDataUrl) {
+    fallbackDataUrl = canvas.toDataURL('image/png')
+  }
+
+  return {
+    dataUrl: fallbackDataUrl,
+    mimeType: fallbackDataUrl.match(/^data:([^;]+);/i)?.[1] || 'image/png',
+  }
+}
+
+async function handleBackgroundFileChange(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0]
+  if (input) {
+    input.value = ''
+  }
+  if (!file)
+    return
+
+  if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) {
+    showAlert('仅支持上传 JPG / PNG / WebP 图片', 'danger')
+    return
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    showAlert('原图超过 8MB，请先压缩后再上传', 'danger')
+    return
+  }
+
+  backgroundUploading.value = true
+  try {
+    const payload = await compressLoginBackgroundImage(file)
+    const res = await api.post('/api/settings/ui-background/upload', {
+      filename: file.name,
+      mimeType: payload.mimeType,
+      dataUrl: payload.dataUrl,
+    })
+
+    if (res.data?.ok && res.data?.data?.url) {
+      appStore.loginBackground = res.data.data.url
+      loginPreviewLoadFailed.value = false
+      showAlert('图片已上传并填充到背景地址，点击“应用背景设置”后全局生效')
+    }
+    else {
+      showAlert(`上传失败: ${res.data?.error || '未知错误'}`, 'danger')
+    }
+  }
+  catch (e: any) {
+    showAlert(`上传失败: ${e.message || '未知错误'}`, 'danger')
+  }
+  finally {
+    backgroundUploading.value = false
+  }
+}
+
+const loginAppearanceEditorBindings = [
+  loginBackgroundPresets,
+  loginPreviewMaskStyle,
+  isSelectedLoginBackgroundPreset,
+  applyBackgroundPreset,
+  restoreDefaultLoginAppearance,
+  triggerBackgroundUpload,
+  handleBackgroundFileChange,
+] as const
+void loginAppearanceEditorBindings
+
+watch(() => appStore.loginBackground, (value) => {
+  const nextUrl = value.trim()
+  const requestId = ++loginPreviewRequestId
+
+  loginPreviewLoading.value = false
+  loginPreviewLoadFailed.value = false
+
+  if (!nextUrl)
+    return
+
+  loginPreviewLoading.value = true
+
+  const img = new Image()
+
+  img.onload = () => {
+    if (requestId !== loginPreviewRequestId)
+      return
+    loginPreviewLoading.value = false
+    loginPreviewLoadFailed.value = false
+  }
+
+  img.onerror = () => {
+    if (requestId !== loginPreviewRequestId)
+      return
+    loginPreviewLoading.value = false
+    loginPreviewLoadFailed.value = true
+  }
+
+  img.src = nextUrl
+}, { immediate: true })
 
 const currentAccountName = computed(() => {
   const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
@@ -712,6 +1068,7 @@ async function loadData() {
   else {
     reportLogs.value = []
     reportLogPagination.value = { page: 1, pageSize: reportPageSize.value || 10, total: 0, totalPages: 1 }
+    await settingStore.fetchReportLogStats('')
   }
   // 管理员加载体验卡配置
   loadTrialConfig()
@@ -731,6 +1088,9 @@ onMounted(() => {
 // 导致 currentAccount computed 返回新对象引用（即使数据内容相同），
 // 从而误触发 loadData()，引发页面闪烁和滚动位置重置
 watch(() => currentAccountId.value, () => {
+  expandedReportLogIds.value = []
+  selectedReportLogIds.value = []
+  closeReportLogDetail()
   loadData()
 })
 
@@ -1096,14 +1456,20 @@ async function refreshReportLogs(options: { page?: number, pageSize?: number, re
   try {
     const targetPage = options.resetPage ? 1 : (options.page || reportLogPagination.value.page || 1)
     const targetPageSize = options.pageSize || reportPageSize.value || 10
-    await settingStore.fetchReportLogs(currentAccountId.value, {
-      page: targetPage,
-      pageSize: targetPageSize,
+    const requestOptions = {
       mode: reportFilters.value.mode,
       status: reportFilters.value.status,
       sortOrder: reportSortOrder.value,
       keyword: reportKeyword.value.trim(),
-    })
+    }
+    await Promise.all([
+      settingStore.fetchReportLogs(currentAccountId.value, {
+        page: targetPage,
+        pageSize: targetPageSize,
+        ...requestOptions,
+      }),
+      settingStore.fetchReportLogStats(currentAccountId.value, requestOptions),
+    ])
     reportPageSize.value = reportLogPagination.value.pageSize || reportPageSize.value || 10
   }
   finally {
@@ -1187,6 +1553,49 @@ async function handleShowLatestFailed() {
   reportSortOrder.value = 'desc'
   reportKeyword.value = ''
   await handleApplyReportSearch()
+}
+
+async function handleResetReportHistoryView() {
+  reportFilters.value = { mode: 'all', status: 'all' }
+  reportKeyword.value = ''
+  reportSortOrder.value = 'desc'
+  reportPageSize.value = 10
+  await handleApplyReportSearch()
+}
+
+async function handleReportStatsCardClick(key: string) {
+  const previous = {
+    mode: reportFilters.value.mode,
+    status: reportFilters.value.status,
+    sortOrder: reportSortOrder.value,
+  }
+
+  if (key === 'total') {
+    reportFilters.value = { mode: 'all', status: 'all' }
+    reportSortOrder.value = 'desc'
+  }
+  else if (key === 'success') {
+    reportFilters.value = { ...reportFilters.value, status: 'success' }
+    reportSortOrder.value = 'desc'
+  }
+  else if (key === 'failed') {
+    reportFilters.value = { ...reportFilters.value, status: 'failed' }
+    reportSortOrder.value = 'desc'
+  }
+  else if (key === 'test' || key === 'hourly' || key === 'daily') {
+    reportFilters.value = { ...reportFilters.value, mode: key }
+    reportSortOrder.value = 'desc'
+  }
+  else {
+    return
+  }
+
+  const changed = previous.mode !== reportFilters.value.mode
+    || previous.status !== reportFilters.value.status
+    || previous.sortOrder !== reportSortOrder.value
+
+  if (!changed)
+    await refreshReportLogs({ resetPage: true })
 }
 
 function isReportLogSelected(id: number) {
@@ -1319,11 +1728,11 @@ function closeReportLogDetail() {
   reportDetailItem.value = null
 }
 
-watch(() => [currentAccountId.value, reportFilters.value.mode, reportFilters.value.status, reportSortOrder.value], ([accountId]) => {
+watch(() => [reportFilters.value.mode, reportFilters.value.status, reportSortOrder.value], () => {
   expandedReportLogIds.value = []
   selectedReportLogIds.value = []
   closeReportLogDetail()
-  if (!accountId)
+  if (!currentAccountId.value)
     return
   void refreshReportLogs({ resetPage: true })
 })
@@ -1348,6 +1757,25 @@ watch(() => reportLogs.value.map(item => item.id).join(','), () => {
     closeReportLogDetail()
   }
 })
+
+watch(
+  () => [reportFilters.value.mode, reportFilters.value.status, reportKeyword.value, reportSortOrder.value, reportPageSize.value],
+  ([mode, status, keyword, sortOrder, pageSize]) => {
+    try {
+      localStorage.setItem(REPORT_HISTORY_VIEW_STORAGE_KEY, JSON.stringify({
+        mode,
+        status,
+        keyword: String(keyword || '').slice(0, 100),
+        sortOrder,
+        pageSize,
+      }))
+    }
+    catch {
+      // ignore localStorage write failures
+    }
+  },
+  { immediate: true },
+)
 
 async function loadTimingConfig() {
   if (!isAdmin.value)
@@ -1580,7 +2008,7 @@ async function restoreTimingDefaults() {
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+          <div class="grid grid-cols-2 items-end gap-3 md:grid-cols-4 xl:grid-cols-6">
             <BaseInput
               v-model.number="localSettings.intervals.farmMin"
               label="农场巡查最小 (秒)"
@@ -1760,18 +2188,20 @@ async function restoreTimingDefaults() {
                 <BaseSwitch v-model="localSettings.automation.friend" label="自动好友互动" hint="好友巡查总开关。开启后按下方子策略遍历好友农场执行操作（偷菜/帮忙/捣乱）。关闭则所有好友互动停止。" recommend="on" />
                 <div class="flex flex-col gap-2">
                   <BaseSwitch v-model="localSettings.automation.land_upgrade" label="自动升级土地" hint="金币充足且满足条件时自动升级土地等级，可提高产量。升级花费较大，金币紧张时建议关闭。" recommend="conditional" />
-                  <div v-show="localSettings.automation.land_upgrade" class="ml-7 flex items-center gap-3">
-                    <span class="glass-text-muted text-[11px] font-bold tracking-widest uppercase">
-                      - 最高升级到：
-                    </span>
-                    <BaseInput
-                      v-model.number="localSettings.automation.landUpgradeTarget"
-                      type="number"
-                      min="0"
-                      max="6"
-                      class="w-24 text-sm shadow-inner !py-1"
-                    />
-                    <span class="text-xs text-gray-500 dark:text-gray-400">0=普通，6=蓝宝石</span>
+                  <div v-show="localSettings.automation.land_upgrade" class="ml-7 space-y-1">
+                    <div class="flex items-center gap-2">
+                      <span class="glass-text-muted shrink-0 text-[11px] font-bold tracking-widest uppercase">
+                        最高升级到：
+                      </span>
+                      <BaseInput
+                        v-model.number="localSettings.automation.landUpgradeTarget"
+                        type="number"
+                        min="0"
+                        max="6"
+                        class="w-16 shrink-0 text-sm shadow-inner !py-1"
+                      />
+                    </div>
+                    <p class="text-[10px] text-gray-500 dark:text-gray-400">0=普通，6=蓝宝石</p>
                   </div>
                 </div>
                 <BaseSwitch v-model="localSettings.automation.sell" label="自动卖果实" hint="收获后自动将仓库中的果实出售换取金币。关闭则果实堆积在仓库不处理。" recommend="on" />
@@ -1909,399 +2339,6 @@ async function restoreTimingDefaults() {
             </BaseButton>
           </div>
 
-          <div class="border border-emerald-100/60 rounded-2xl bg-emerald-50/40 p-5 dark:border-emerald-800/40 dark:bg-emerald-950/10">
-            <div class="mb-4 flex items-center justify-between gap-3">
-              <h4 class="flex items-center gap-2 text-xs text-emerald-700 font-bold tracking-widest uppercase dark:text-emerald-300">
-                <div class="i-carbon-report-data mr-1" /> 经营汇报
-              </h4>
-              <div class="flex flex-wrap gap-2">
-                <BaseButton
-                  variant="secondary"
-                  size="sm"
-                  :loading="reportSendingMode === 'hourly'"
-                  @click="handleSendReport('hourly')"
-                >
-                  立即发小时汇报
-                </BaseButton>
-                <BaseButton
-                  variant="secondary"
-                  size="sm"
-                  :loading="reportSendingMode === 'daily'"
-                  @click="handleSendReport('daily')"
-                >
-                  立即发日报
-                </BaseButton>
-                <BaseButton
-                  variant="secondary"
-                  size="sm"
-                  :loading="reportTesting"
-                  @click="handleSendReportTest"
-                >
-                  发送测试汇报
-                </BaseButton>
-              </div>
-            </div>
-
-            <div class="space-y-4">
-              <BaseSwitch
-                v-model="localSettings.reportConfig.enabled"
-                label="启用经营汇报"
-                hint="按设定周期向推送渠道发送账号经营摘要。默认复用你在这里填写的专属推送参数，不影响全局下线提醒。"
-                recommend="conditional"
-              />
-
-              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div class="flex items-center gap-2">
-                  <BaseSelect
-                    v-model="localSettings.reportConfig.channel"
-                    label="推送渠道"
-                    :options="channelOptions"
-                    class="flex-1"
-                  />
-                  <a
-                    v-if="reportChannelDocUrl"
-                    :href="reportChannelDocUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="mt-5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-emerald-100 px-2 py-1.5 text-xs text-emerald-700 font-medium transition dark:bg-emerald-900/30 hover:bg-emerald-200 dark:text-emerald-300 dark:hover:bg-emerald-800/40"
-                    title="查看官方文档"
-                  >
-                    <span class="i-carbon-launch text-xs" />
-                    官网
-                  </a>
-                </div>
-                <BaseInput
-                  v-model="localSettings.reportConfig.title"
-                  label="汇报标题"
-                  type="text"
-                  placeholder="经营汇报"
-                />
-              </div>
-
-              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <BaseInput
-                  v-model="localSettings.reportConfig.endpoint"
-                  label="接口地址"
-                  type="text"
-                  :disabled="localSettings.reportConfig.channel !== 'webhook'"
-                  placeholder="Webhook 渠道必填"
-                />
-                <BaseInput
-                  v-model="localSettings.reportConfig.token"
-                  label="Token"
-                  type="text"
-                  placeholder="非 Webhook 渠道通常必填"
-                />
-              </div>
-
-              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div class="rounded-xl border border-emerald-200/60 bg-white/50 p-4 dark:border-emerald-800/30 dark:bg-black/10">
-                  <BaseSwitch
-                    v-model="localSettings.reportConfig.hourlyEnabled"
-                    label="小时汇报"
-                    hint="到达指定分钟后，发送最近 1 小时的收益与动作摘要。"
-                    recommend="conditional"
-                  />
-                  <div class="mt-3 flex items-center gap-3">
-                    <span class="glass-text-muted text-[11px] font-bold tracking-widest uppercase">每小时第</span>
-                    <BaseInput
-                      v-model.number="localSettings.reportConfig.hourlyMinute"
-                      type="number"
-                      min="0"
-                      max="59"
-                      class="w-24 text-sm shadow-inner !py-1"
-                      :disabled="!localSettings.reportConfig.hourlyEnabled"
-                    />
-                    <span class="text-xs text-gray-500 dark:text-gray-400">分钟发送</span>
-                  </div>
-                </div>
-
-                <div class="rounded-xl border border-emerald-200/60 bg-white/50 p-4 dark:border-emerald-800/30 dark:bg-black/10">
-                  <BaseSwitch
-                    v-model="localSettings.reportConfig.dailyEnabled"
-                    label="每日汇报"
-                    hint="按设定时刻发送今日累计经营摘要，适合晚间复盘。"
-                    recommend="on"
-                  />
-                  <div class="mt-3 flex items-center gap-3">
-                    <span class="glass-text-muted text-[11px] font-bold tracking-widest uppercase">每天</span>
-                    <BaseInput
-                      v-model.number="localSettings.reportConfig.dailyHour"
-                      type="number"
-                      min="0"
-                      max="23"
-                      class="w-24 text-sm shadow-inner !py-1"
-                      :disabled="!localSettings.reportConfig.dailyEnabled"
-                    />
-                    <span class="text-xs text-gray-500 dark:text-gray-400">时</span>
-                    <BaseInput
-                      v-model.number="localSettings.reportConfig.dailyMinute"
-                      type="number"
-                      min="0"
-                      max="59"
-                      class="w-24 text-sm shadow-inner !py-1"
-                      :disabled="!localSettings.reportConfig.dailyEnabled"
-                    />
-                    <span class="text-xs text-gray-500 dark:text-gray-400">分发送</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="rounded-xl border border-emerald-200/60 bg-white/50 p-4 dark:border-emerald-800/30 dark:bg-black/10">
-                <div class="mb-2 flex items-center gap-2 text-xs text-emerald-700 font-bold tracking-widest uppercase dark:text-emerald-300">
-                  <div class="i-carbon-data-base mr-1" /> 历史保留策略
-                </div>
-                <div class="flex items-center gap-3">
-                  <span class="glass-text-muted text-[11px] font-bold tracking-widest uppercase">自动保留</span>
-                  <BaseInput
-                    v-model.number="localSettings.reportConfig.retentionDays"
-                    type="number"
-                    min="0"
-                    max="365"
-                    class="w-24 text-sm shadow-inner !py-1"
-                  />
-                  <span class="text-xs text-gray-500 dark:text-gray-400">天</span>
-                </div>
-                <p class="mt-2 text-xs text-gray-500 leading-relaxed dark:text-gray-400">
-                  填 <span class="font-bold">0</span> 表示不自动清理；填 1~365 表示系统每天自动清理一次过期汇报，并在每次发送后顺手回收当前账号的旧记录。
-                </p>
-              </div>
-
-              <div class="border-t border-emerald-200/60 pt-4 dark:border-emerald-800/30">
-                <div class="mb-3 flex items-center justify-between gap-3">
-                  <h5 class="text-xs text-emerald-700 font-bold tracking-widest uppercase dark:text-emerald-300">
-                    最近汇报记录
-                  </h5>
-                  <div class="flex flex-wrap gap-2">
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      :disabled="selectedReportLogCount === 0"
-                      :loading="reportHistoryBatchDeleting"
-                      @click="handleDeleteReportLogs(selectedReportLogIds)"
-                    >
-                      删除选中
-                    </BaseButton>
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      :loading="reportHistoryExporting"
-                      @click="handleExportReportLogs"
-                    >
-                      导出当前筛选
-                    </BaseButton>
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      :loading="reportHistoryLoading"
-                      @click="() => refreshReportLogs()"
-                    >
-                      刷新记录
-                    </BaseButton>
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      :loading="reportHistoryClearing"
-                      @click="handleClearReportLogs"
-                    >
-                      清空记录
-                    </BaseButton>
-                  </div>
-                </div>
-
-                <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <BaseSelect
-                    v-model="reportFilters.mode"
-                    label="筛选类型"
-                    :options="reportModeOptions"
-                  />
-                  <BaseSelect
-                    v-model="reportFilters.status"
-                    label="筛选结果"
-                    :options="reportStatusOptions"
-                  />
-                  <BaseSelect
-                    v-model="reportPageSize"
-                    label="每页条数"
-                    :options="reportPageSizeOptions"
-                  />
-                  <BaseInput
-                    v-model="reportKeyword"
-                    label="关键字搜索"
-                    type="text"
-                    placeholder="标题 / 正文 / 失败原因"
-                    @keydown.enter="handleApplyReportSearch"
-                  />
-                </div>
-
-                <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
-                  <div class="text-xs text-gray-500 dark:text-gray-400">
-                    <span v-if="reportKeyword.trim()">当前关键字：{{ reportKeyword.trim() }}</span>
-                    <span v-else>未启用关键字搜索</span>
-                  </div>
-                  <div class="flex flex-wrap gap-2">
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      @click="handleApplyReportSearch"
-                    >
-                      搜索
-                    </BaseButton>
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      @click="handleShowLatestFailed"
-                    >
-                      最新失败
-                    </BaseButton>
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      :disabled="!reportKeyword"
-                      @click="reportKeyword = ''; handleApplyReportSearch()"
-                    >
-                      清空搜索
-                    </BaseButton>
-                  </div>
-                </div>
-
-                <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <BaseSelect
-                    v-model="reportSortOrder"
-                    label="时间排序"
-                    :options="reportSortOrderOptions"
-                  />
-                </div>
-
-                <div class="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
-                  <div class="flex flex-wrap items-center gap-3">
-                    <span>
-                      共 {{ reportLogPagination.total }} 条记录，当前第 {{ reportLogPagination.page }} / {{ reportLogPagination.totalPages }} 页
-                    </span>
-                    <label class="inline-flex items-center gap-2 select-none">
-                      <input
-                        type="checkbox"
-                        class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                        :checked="allVisibleReportLogsSelected"
-                        @change="toggleSelectAllVisibleReportLogs"
-                      >
-                      <span>全选当前页</span>
-                    </label>
-                    <span v-if="selectedReportLogCount > 0" class="text-emerald-600 font-semibold dark:text-emerald-300">
-                      已选 {{ selectedReportLogCount }} 条
-                    </span>
-                  </div>
-                  <div class="flex gap-2">
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      :disabled="reportHistoryLoading || reportLogPagination.page <= 1"
-                      @click="goToReportLogPage(reportLogPagination.page - 1)"
-                    >
-                      上一页
-                    </BaseButton>
-                    <BaseButton
-                      variant="secondary"
-                      size="sm"
-                      :disabled="reportHistoryLoading || reportLogPagination.page >= reportLogPagination.totalPages"
-                      @click="goToReportLogPage(reportLogPagination.page + 1)"
-                    >
-                      下一页
-                    </BaseButton>
-                  </div>
-                </div>
-
-                <div v-if="reportHistoryLoading" class="rounded-xl border border-dashed border-emerald-200/70 bg-white/40 px-4 py-5 text-center text-xs text-gray-500 dark:border-emerald-800/30 dark:bg-black/10 dark:text-gray-400">
-                  正在加载汇报历史...
-                </div>
-
-                <div v-else-if="reportLogs.length === 0" class="rounded-xl border border-dashed border-emerald-200/70 bg-white/40 px-4 py-5 text-center text-xs text-gray-500 dark:border-emerald-800/30 dark:bg-black/10 dark:text-gray-400">
-                  还没有经营汇报历史记录
-                </div>
-
-                <div v-else class="space-y-3">
-                  <div
-                    v-for="item in reportLogs"
-                    :key="item.id"
-                    class="rounded-xl border border-emerald-200/60 bg-white/50 p-4 dark:border-emerald-800/30 dark:bg-black/10"
-                  >
-                    <div class="flex flex-wrap items-start justify-between gap-2">
-                      <div class="min-w-0 flex flex-1 items-start gap-3">
-                        <label class="mt-0.5 inline-flex items-center">
-                          <input
-                            type="checkbox"
-                            class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                            :checked="isReportLogSelected(item.id)"
-                            @change="toggleReportLogSelected(item.id)"
-                          >
-                        </label>
-                        <div class="min-w-0 flex-1">
-                          <div class="truncate text-sm text-gray-900 font-semibold dark:text-gray-100">
-                            {{ item.title || '经营汇报' }}
-                          </div>
-                          <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                            {{ formatReportMode(item.mode) }} · {{ formatReportLogTime(item.createdAt) }} · {{ item.channel || 'unknown' }}
-                          </div>
-                        </div>
-                      </div>
-                      <div class="flex flex-wrap items-center gap-2">
-                        <span
-                          class="rounded-full px-2 py-0.5 text-[11px] font-bold"
-                          :class="item.ok ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'"
-                        >
-                          {{ item.ok ? '成功' : '失败' }}
-                        </span>
-                        <BaseButton
-                          variant="secondary"
-                          size="sm"
-                          :loading="reportHistoryDeletingIds.includes(item.id)"
-                          @click="handleDeleteReportLogs([item.id], { single: true, title: `「${item.title || '经营汇报'}」` })"
-                        >
-                          删除
-                        </BaseButton>
-                      </div>
-                    </div>
-
-                    <div
-                      class="mt-3 overflow-auto whitespace-pre-line rounded-lg bg-black/5 px-3 py-2 text-xs leading-5 text-gray-700 dark:bg-white/5 dark:text-gray-300"
-                      :class="isReportLogExpanded(item.id) ? 'max-h-64' : 'max-h-24'"
-                    >
-                      {{ isReportLogExpanded(item.id) ? (item.content || '无正文') : getReportLogPreview(item.content) }}
-                    </div>
-
-                    <div
-                      v-if="item.errorMessage"
-                      class="mt-2 text-xs text-red-600 dark:text-red-400"
-                    >
-                      失败原因：{{ item.errorMessage }}
-                    </div>
-
-                    <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <span class="text-[11px] text-gray-500 dark:text-gray-400">
-                        {{ isReportLogExpanded(item.id) ? '已展开完整正文' : '当前显示正文预览' }}
-                      </span>
-                      <div class="flex flex-wrap gap-2">
-                        <BaseButton
-                          variant="secondary"
-                          size="sm"
-                          @click="toggleReportLogExpanded(item.id)"
-                        >
-                          {{ isReportLogExpanded(item.id) ? '收起正文' : '展开正文' }}
-                        </BaseButton>
-                        <BaseButton
-                          variant="secondary"
-                          size="sm"
-                          @click="openReportLogDetail(item)"
-                        >
-                          查看详情
-                        </BaseButton>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- Save Button -->
@@ -2472,7 +2509,7 @@ async function restoreTimingDefaults() {
           </div>
 
           <!-- Save Offline Button -->
-          <div class="mt-auto flex justify-end border-t border-gray-200/50 bg-transparent px-4 py-3 dark:border-gray-700/50">
+          <div class="flex justify-end border-t border-gray-200/50 bg-transparent px-4 py-3 dark:border-gray-700/50">
             <BaseButton
               variant="primary"
               size="sm"
@@ -2481,6 +2518,446 @@ async function restoreTimingDefaults() {
             >
               保存下线提醒设置
             </BaseButton>
+          </div>
+        </template>
+
+        <template v-if="currentAccountId">
+          <div class="border-b border-t border-gray-200/50 bg-transparent px-4 py-3 dark:border-gray-700/50">
+            <h3 class="glass-text-main flex items-center gap-2 text-base font-bold">
+              <div class="i-carbon-report-data" />
+              经营汇报
+            </h3>
+          </div>
+
+          <div class="p-4">
+            <div class="border border-emerald-100/60 rounded-2xl bg-emerald-50/40 p-5 dark:border-emerald-800/40 dark:bg-emerald-950/10">
+              <div class="mb-4 flex items-center justify-between gap-3">
+                <h4 class="flex items-center gap-2 text-xs text-emerald-700 font-bold tracking-widest uppercase dark:text-emerald-300">
+                  <div class="i-carbon-report-data mr-1" /> 经营汇报
+                </h4>
+                <div class="flex flex-wrap gap-2">
+                  <BaseButton
+                    variant="secondary"
+                    size="sm"
+                    :loading="reportSendingMode === 'hourly'"
+                    @click="handleSendReport('hourly')"
+                  >
+                    立即发小时汇报
+                  </BaseButton>
+                  <BaseButton
+                    variant="secondary"
+                    size="sm"
+                    :loading="reportSendingMode === 'daily'"
+                    @click="handleSendReport('daily')"
+                  >
+                    立即发日报
+                  </BaseButton>
+                  <BaseButton
+                    variant="secondary"
+                    size="sm"
+                    :loading="reportTesting"
+                    @click="handleSendReportTest"
+                  >
+                    发送测试汇报
+                  </BaseButton>
+                </div>
+              </div>
+
+              <div class="space-y-4">
+                <BaseSwitch
+                  v-model="localSettings.reportConfig.enabled"
+                  label="启用经营汇报"
+                  hint="按设定周期向推送渠道发送账号经营摘要。默认复用你在这里填写的专属推送参数，不影响全局下线提醒。"
+                  recommend="conditional"
+                />
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div class="flex items-center gap-2">
+                    <BaseSelect
+                      v-model="localSettings.reportConfig.channel"
+                      label="推送渠道"
+                      :options="channelOptions"
+                      class="flex-1"
+                    />
+                    <a
+                      v-if="reportChannelDocUrl"
+                      :href="reportChannelDocUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="mt-5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-emerald-100 px-2 py-1.5 text-xs text-emerald-700 font-medium transition dark:bg-emerald-900/30 hover:bg-emerald-200 dark:text-emerald-300 dark:hover:bg-emerald-800/40"
+                      title="查看官方文档"
+                    >
+                      <span class="i-carbon-launch text-xs" />
+                      官网
+                    </a>
+                  </div>
+                  <BaseInput
+                    v-model="localSettings.reportConfig.title"
+                    label="汇报标题"
+                    type="text"
+                    placeholder="经营汇报"
+                  />
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <BaseInput
+                    v-model="localSettings.reportConfig.endpoint"
+                    label="接口地址"
+                    type="text"
+                    :disabled="localSettings.reportConfig.channel !== 'webhook'"
+                    placeholder="Webhook 渠道必填"
+                  />
+                  <BaseInput
+                    v-model="localSettings.reportConfig.token"
+                    label="Token"
+                    type="text"
+                    placeholder="非 Webhook 渠道通常必填"
+                  />
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div class="rounded-xl border border-emerald-200/60 bg-white/50 p-4 dark:border-emerald-800/30 dark:bg-black/10">
+                    <BaseSwitch
+                      v-model="localSettings.reportConfig.hourlyEnabled"
+                      label="小时汇报"
+                      hint="到达指定分钟后，发送最近 1 小时的收益与动作摘要。"
+                      recommend="conditional"
+                    />
+                    <div class="mt-3 flex items-center gap-3">
+                      <span class="glass-text-muted text-[11px] font-bold tracking-widest uppercase">每小时第</span>
+                      <BaseInput
+                        v-model.number="localSettings.reportConfig.hourlyMinute"
+                        type="number"
+                        min="0"
+                        max="59"
+                        class="w-24 text-sm shadow-inner !py-1"
+                        :disabled="!localSettings.reportConfig.hourlyEnabled"
+                      />
+                      <span class="text-xs text-gray-500 dark:text-gray-400">分钟发送</span>
+                    </div>
+                  </div>
+
+                  <div class="rounded-xl border border-emerald-200/60 bg-white/50 p-4 dark:border-emerald-800/30 dark:bg-black/10">
+                    <BaseSwitch
+                      v-model="localSettings.reportConfig.dailyEnabled"
+                      label="每日汇报"
+                      hint="按设定时刻发送今日累计经营摘要，适合晚间复盘。"
+                      recommend="on"
+                    />
+                    <div class="mt-3 flex items-center gap-3">
+                      <span class="glass-text-muted text-[11px] font-bold tracking-widest uppercase">每天</span>
+                      <BaseInput
+                        v-model.number="localSettings.reportConfig.dailyHour"
+                        type="number"
+                        min="0"
+                        max="23"
+                        class="w-24 text-sm shadow-inner !py-1"
+                        :disabled="!localSettings.reportConfig.dailyEnabled"
+                      />
+                      <span class="text-xs text-gray-500 dark:text-gray-400">时</span>
+                      <BaseInput
+                        v-model.number="localSettings.reportConfig.dailyMinute"
+                        type="number"
+                        min="0"
+                        max="59"
+                        class="w-24 text-sm shadow-inner !py-1"
+                        :disabled="!localSettings.reportConfig.dailyEnabled"
+                      />
+                      <span class="text-xs text-gray-500 dark:text-gray-400">分发送</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="rounded-xl border border-emerald-200/60 bg-white/50 p-4 dark:border-emerald-800/30 dark:bg-black/10">
+                  <div class="mb-2 flex items-center gap-2 text-xs text-emerald-700 font-bold tracking-widest uppercase dark:text-emerald-300">
+                    <div class="i-carbon-data-base mr-1" /> 历史保留策略
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="glass-text-muted text-[11px] font-bold tracking-widest uppercase">自动保留</span>
+                    <BaseInput
+                      v-model.number="localSettings.reportConfig.retentionDays"
+                      type="number"
+                      min="0"
+                      max="365"
+                      class="w-24 text-sm shadow-inner !py-1"
+                    />
+                    <span class="text-xs text-gray-500 dark:text-gray-400">天</span>
+                  </div>
+                  <p class="mt-2 text-xs text-gray-500 leading-relaxed dark:text-gray-400">
+                    填 <span class="font-bold">0</span> 表示不自动清理；填 1~365 表示系统每天自动清理一次过期汇报，并在每次发送后顺手回收当前账号的旧记录。
+                  </p>
+                </div>
+
+                <div class="border-t border-emerald-200/60 pt-4 dark:border-emerald-800/30">
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <h5 class="text-xs text-emerald-700 font-bold tracking-widest uppercase dark:text-emerald-300">
+                      最近汇报记录
+                    </h5>
+                    <div class="flex flex-wrap gap-2">
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        :disabled="selectedReportLogCount === 0"
+                        :loading="reportHistoryBatchDeleting"
+                        @click="handleDeleteReportLogs(selectedReportLogIds)"
+                      >
+                        删除选中
+                      </BaseButton>
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        :loading="reportHistoryExporting"
+                        @click="handleExportReportLogs"
+                      >
+                        导出当前筛选
+                      </BaseButton>
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        :loading="reportHistoryLoading"
+                        @click="() => refreshReportLogs()"
+                      >
+                        刷新记录
+                      </BaseButton>
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        :loading="reportHistoryClearing"
+                        @click="handleClearReportLogs"
+                      >
+                        清空记录
+                      </BaseButton>
+                    </div>
+                  </div>
+
+                  <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <BaseSelect
+                      v-model="reportFilters.mode"
+                      label="筛选类型"
+                      :options="reportModeOptions"
+                    />
+                    <BaseSelect
+                      v-model="reportFilters.status"
+                      label="筛选结果"
+                      :options="reportStatusOptions"
+                    />
+                    <BaseSelect
+                      v-model="reportPageSize"
+                      label="每页条数"
+                      :options="reportPageSizeOptions"
+                    />
+                    <BaseInput
+                      v-model="reportKeyword"
+                      label="关键字搜索"
+                      type="text"
+                      placeholder="标题 / 正文 / 失败原因"
+                      @keydown.enter="handleApplyReportSearch"
+                    />
+                  </div>
+
+                  <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
+                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                      <span v-if="reportKeyword.trim()">当前关键字：{{ reportKeyword.trim() }}</span>
+                      <span v-else>未启用关键字搜索</span>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        @click="handleApplyReportSearch"
+                      >
+                        搜索
+                      </BaseButton>
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        @click="handleShowLatestFailed"
+                      >
+                        最新失败
+                      </BaseButton>
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        @click="handleResetReportHistoryView"
+                      >
+                        恢复默认视图
+                      </BaseButton>
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        :disabled="!reportKeyword"
+                        @click="reportKeyword = ''; handleApplyReportSearch()"
+                      >
+                        清空搜索
+                      </BaseButton>
+                    </div>
+                  </div>
+
+                  <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <BaseSelect
+                      v-model="reportSortOrder"
+                      label="时间排序"
+                      :options="reportSortOrderOptions"
+                    />
+                  </div>
+
+                  <div class="mb-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <button
+                      v-for="item in reportHistoryStatsCards"
+                      :key="item.key"
+                      type="button"
+                      class="rounded-xl border border-emerald-200/60 px-3 py-3 text-left transition-all duration-150 dark:border-emerald-800/30"
+                      :class="[
+                        item.bg,
+                        item.active
+                          ? 'ring-2 ring-emerald-500/70 shadow-md dark:ring-emerald-400/60'
+                          : 'hover:-translate-y-0.5 hover:shadow-sm',
+                      ]"
+                      :title="`点击筛选${item.label}`"
+                      @click="handleReportStatsCardClick(item.key)"
+                    >
+                      <div class="flex items-center justify-between gap-2 text-[11px] text-gray-500 font-bold tracking-widest uppercase dark:text-gray-400">
+                        <span>{{ item.label }}</span>
+                        <span v-if="item.active" class="text-emerald-600 dark:text-emerald-300">已筛选</span>
+                      </div>
+                      <div class="mt-2 text-2xl font-black" :class="item.tone">
+                        {{ item.value }}
+                      </div>
+                      <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                        点击快速筛选
+                      </div>
+                    </button>
+                  </div>
+
+                  <div class="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                    <div class="flex flex-wrap items-center gap-3">
+                      <span>
+                        共 {{ reportLogPagination.total }} 条记录，当前第 {{ reportLogPagination.page }} / {{ reportLogPagination.totalPages }} 页
+                      </span>
+                      <label class="inline-flex items-center gap-2 select-none">
+                        <input
+                          type="checkbox"
+                          class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                          :checked="allVisibleReportLogsSelected"
+                          @change="toggleSelectAllVisibleReportLogs"
+                        >
+                        <span>全选当前页</span>
+                      </label>
+                      <span v-if="selectedReportLogCount > 0" class="text-emerald-600 font-semibold dark:text-emerald-300">
+                        已选 {{ selectedReportLogCount }} 条
+                      </span>
+                    </div>
+                    <div class="flex gap-2">
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        :disabled="reportHistoryLoading || reportLogPagination.page <= 1"
+                        @click="goToReportLogPage(reportLogPagination.page - 1)"
+                      >
+                        上一页
+                      </BaseButton>
+                      <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        :disabled="reportHistoryLoading || reportLogPagination.page >= reportLogPagination.totalPages"
+                        @click="goToReportLogPage(reportLogPagination.page + 1)"
+                      >
+                        下一页
+                      </BaseButton>
+                    </div>
+                  </div>
+
+                  <div v-if="reportHistoryLoading" class="rounded-xl border border-dashed border-emerald-200/70 bg-white/40 px-4 py-5 text-center text-xs text-gray-500 dark:border-emerald-800/30 dark:bg-black/10 dark:text-gray-400">
+                    正在加载汇报历史...
+                  </div>
+
+                  <div v-else-if="reportLogs.length === 0" class="rounded-xl border border-dashed border-emerald-200/70 bg-white/40 px-4 py-5 text-center text-xs text-gray-500 dark:border-emerald-800/30 dark:bg-black/10 dark:text-gray-400">
+                    还没有经营汇报历史记录
+                  </div>
+
+                  <div v-else class="space-y-3">
+                    <div
+                      v-for="item in reportLogs"
+                      :key="item.id"
+                      class="rounded-xl border border-emerald-200/60 bg-white/50 p-4 dark:border-emerald-800/30 dark:bg-black/10"
+                    >
+                      <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div class="min-w-0 flex flex-1 items-start gap-3">
+                          <label class="mt-0.5 inline-flex items-center">
+                            <input
+                              type="checkbox"
+                              class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                              :checked="isReportLogSelected(item.id)"
+                              @change="toggleReportLogSelected(item.id)"
+                            >
+                          </label>
+                          <div class="min-w-0 flex-1">
+                            <div class="truncate text-sm text-gray-900 font-semibold dark:text-gray-100">
+                              {{ item.title || '经营汇报' }}
+                            </div>
+                            <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                              {{ formatReportMode(item.mode) }} · {{ formatReportLogTime(item.createdAt) }} · {{ item.channel || 'unknown' }}
+                            </div>
+                          </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span
+                            class="rounded-full px-2 py-0.5 text-[11px] font-bold"
+                            :class="item.ok ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'"
+                          >
+                            {{ item.ok ? '成功' : '失败' }}
+                          </span>
+                          <BaseButton
+                            variant="secondary"
+                            size="sm"
+                            :loading="reportHistoryDeletingIds.includes(item.id)"
+                            @click="handleDeleteReportLogs([item.id], { single: true, title: `「${item.title || '经营汇报'}」` })"
+                          >
+                            删除
+                          </BaseButton>
+                        </div>
+                      </div>
+
+                      <div
+                        class="mt-3 overflow-auto whitespace-pre-line rounded-lg bg-black/5 px-3 py-2 text-xs leading-5 text-gray-700 dark:bg-white/5 dark:text-gray-300"
+                        :class="isReportLogExpanded(item.id) ? 'max-h-64' : 'max-h-24'"
+                      >
+                        {{ isReportLogExpanded(item.id) ? (item.content || '无正文') : getReportLogPreview(item.content) }}
+                      </div>
+
+                      <div
+                        v-if="item.errorMessage"
+                        class="mt-2 text-xs text-red-600 dark:text-red-400"
+                      >
+                        失败原因：{{ item.errorMessage }}
+                      </div>
+
+                      <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-[11px] text-gray-500 dark:text-gray-400">
+                          {{ isReportLogExpanded(item.id) ? '已展开完整正文' : '当前显示正文预览' }}
+                        </span>
+                        <div class="flex flex-wrap gap-2">
+                          <BaseButton
+                            variant="secondary"
+                            size="sm"
+                            @click="toggleReportLogExpanded(item.id)"
+                          >
+                            {{ isReportLogExpanded(item.id) ? '收起正文' : '展开正文' }}
+                          </BaseButton>
+                          <BaseButton
+                            variant="secondary"
+                            size="sm"
+                            @click="openReportLogDetail(item)"
+                          >
+                            查看详情
+                          </BaseButton>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </template>
       </div>
@@ -2677,7 +3154,7 @@ async function restoreTimingDefaults() {
       </div>
 
       <!-- Card 3: 体验卡配置（仅管理员可见） -->
-      <div v-if="isAdmin" class="card glass-panel h-full flex flex-col rounded-lg shadow lg:col-span-2">
+      <div v-if="isAdmin" class="card glass-panel h-full flex flex-col rounded-lg shadow lg:col-span-2 relative z-10">
         <div class="border-b border-gray-200/50 bg-transparent px-4 py-3 dark:border-gray-700/50">
           <h3 class="glass-text-main flex items-center gap-2 text-base font-bold">
             <div class="i-carbon-chemistry" />
@@ -2803,55 +3280,445 @@ async function restoreTimingDefaults() {
         </h3>
       </div>
 
-      <div class="p-4 space-y-4">
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div class="space-y-3">
+      <div class="p-4 space-y-5">
+        <div class="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+          <div class="space-y-4">
             <BaseInput
               v-model="appStore.loginBackground"
               label="登录页背景图片 URL"
               placeholder="请输入图片链接 (如: https://example.com/bg.jpg)"
             />
-            <p class="glass-text-muted text-xs">
-              提示：留空则使用系统默认渐变背景。建议使用高分辨率壁纸链接。
-            </p>
 
-            <div class="mt-4 flex items-center gap-3 border-t pt-4 dark:border-gray-700">
-              <BaseButton
-                variant="primary"
-                size="sm"
-                @click="appStore.setUIConfig({ loginBackground: appStore.loginBackground })"
-              >
-                应用背景设置
-              </BaseButton>
-              <BaseButton
-                variant="secondary"
-                size="sm"
-                @click="appStore.setUIConfig({ loginBackground: '' })"
-              >
-                恢复默认
-              </BaseButton>
+            <div class="rounded-2xl border border-primary-500/20 bg-primary-500/8 p-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div class="glass-text-main text-sm font-bold">
+                    当前主题联动
+                  </div>
+                  <p class="glass-text-muted mt-1 text-xs leading-5">
+                    当前主题为「{{ currentThemeOption.name }}」，可一键套用对应的专属背景预设。
+                  </p>
+                </div>
+                <BaseButton
+                  variant="primary"
+                  size="sm"
+                  @click="applyCurrentThemeBackgroundPreset"
+                >
+                  套用 {{ currentThemeBackgroundPreset.title }}
+                </BaseButton>
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-white/10 bg-black/5 p-4 dark:bg-white/5">
+              <div class="glass-text-main text-sm font-medium">
+                背景作用范围
+              </div>
+              <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <button
+                  v-for="option in UI_BACKGROUND_SCOPE_OPTIONS"
+                  :key="option.value"
+                  type="button"
+                  class="rounded-2xl border px-3 py-3 text-left transition-all"
+                  :class="appStore.backgroundScope === option.value
+                    ? 'border-primary-500 bg-primary-500/10 shadow-lg shadow-primary-500/10'
+                    : 'border-white/10 bg-white/5 hover:border-primary-500/30 hover:bg-white/10 dark:bg-black/10'"
+                  @click="appStore.backgroundScope = option.value"
+                >
+                  <div class="glass-text-main text-sm font-semibold">
+                    {{ option.label }}
+                  </div>
+                  <p class="glass-text-muted mt-1 text-[11px] leading-5">
+                    {{ option.description }}
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            <input
+              ref="backgroundFileInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              class="hidden"
+              @change="handleBackgroundFileChange"
+            >
+
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div class="rounded-2xl border border-white/10 bg-black/5 p-4 dark:bg-white/5">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="glass-text-main text-sm font-medium">登录页遮罩强度</span>
+                  <span class="rounded-full bg-primary-500/15 px-2.5 py-1 text-[11px] font-bold text-primary-500">
+                    {{ appStore.loginBackgroundOverlayOpacity }}%
+                  </span>
+                </div>
+                <input
+                  v-model.number="appStore.loginBackgroundOverlayOpacity"
+                  type="range"
+                  min="0"
+                  max="80"
+                  step="1"
+                  class="mt-4 w-full cursor-pointer accent-primary-500"
+                >
+                <p class="glass-text-muted mt-2 text-[11px] leading-5">
+                  数值越高，图片越暗，登录卡片和标题文字更容易稳住。
+                </p>
+              </div>
+
+              <div class="rounded-2xl border border-white/10 bg-black/5 p-4 dark:bg-white/5">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="glass-text-main text-sm font-medium">登录页模糊度</span>
+                  <span class="rounded-full bg-primary-500/15 px-2.5 py-1 text-[11px] font-bold text-primary-500">
+                    {{ appStore.loginBackgroundBlur }}px
+                  </span>
+                </div>
+                <input
+                  v-model.number="appStore.loginBackgroundBlur"
+                  type="range"
+                  min="0"
+                  max="12"
+                  step="1"
+                  class="mt-4 w-full cursor-pointer accent-primary-500"
+                >
+                <p class="glass-text-muted mt-2 text-[11px] leading-5">
+                  轻微模糊可以削弱杂乱背景，避免图片主体抢走登录焦点。
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div class="rounded-2xl border border-white/10 bg-black/5 p-4 dark:bg-white/5">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="glass-text-main text-sm font-medium">主界面遮罩强度</span>
+                  <span class="rounded-full bg-primary-500/15 px-2.5 py-1 text-[11px] font-bold text-primary-500">
+                    {{ appStore.appBackgroundOverlayOpacity }}%
+                  </span>
+                </div>
+                <input
+                  v-model.number="appStore.appBackgroundOverlayOpacity"
+                  type="range"
+                  min="20"
+                  max="90"
+                  step="1"
+                  class="mt-4 w-full cursor-pointer accent-primary-500"
+                >
+                <p class="glass-text-muted mt-2 text-[11px] leading-5">
+                  业务页推荐更重一点，让日志、表格、卡片始终保持高可读性。
+                </p>
+              </div>
+
+              <div class="rounded-2xl border border-white/10 bg-black/5 p-4 dark:bg-white/5">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="glass-text-main text-sm font-medium">主界面模糊度</span>
+                  <span class="rounded-full bg-primary-500/15 px-2.5 py-1 text-[11px] font-bold text-primary-500">
+                    {{ appStore.appBackgroundBlur }}px
+                  </span>
+                </div>
+                <input
+                  v-model.number="appStore.appBackgroundBlur"
+                  type="range"
+                  min="0"
+                  max="18"
+                  step="1"
+                  class="mt-4 w-full cursor-pointer accent-primary-500"
+                >
+                <p class="glass-text-muted mt-2 text-[11px] leading-5">
+                  主界面模糊通常比登录页更高，这样背景存在感还在，但不会干扰操作。
+                </p>
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-white/10 bg-black/5 p-4 dark:bg-white/5">
+              <div class="flex flex-wrap items-center gap-3">
+                <BaseButton
+                  variant="secondary"
+                  size="sm"
+                  :loading="backgroundUploading"
+                  @click="triggerBackgroundUpload"
+                >
+                  本地上传背景图
+                </BaseButton>
+                <BaseButton
+                  variant="primary"
+                  size="sm"
+                  :loading="backgroundSaving"
+                  @click="saveLoginAppearance"
+                >
+                  保存主题与背景
+                </BaseButton>
+                <BaseButton
+                  variant="secondary"
+                  size="sm"
+                  :disabled="backgroundSaving || backgroundUploading"
+                  @click="restoreDefaultLoginAppearance"
+                >
+                  恢复默认
+                </BaseButton>
+              </div>
+              <p class="glass-text-muted mt-3 text-xs leading-5">
+                支持 JPG / PNG / WebP。本地上传会先在浏览器压缩，再保存到服务端静态目录，避免把图片直接塞进配置里。
+              </p>
             </div>
           </div>
 
-          <div class="flex flex-col gap-2">
-            <span class="glass-text-muted text-xs font-medium">预览 (效果参考)</span>
-            <div
-              class="relative h-32 w-full overflow-hidden border border-white/20 rounded-xl bg-cover bg-center dark:border-white/10"
-              :style="appStore.loginBackground ? { backgroundImage: `url(${appStore.loginBackground})` } : { background: 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)' }"
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between gap-3">
+              <span class="glass-text-muted text-xs font-medium">预览 (效果参考)</span>
+              <button
+                type="button"
+                class="glass-text-main rounded-full border border-white/20 bg-white/15 px-3 py-1 text-[11px] transition-all hover:bg-white/25 dark:border-white/10 dark:bg-black/20 dark:hover:bg-black/35"
+                @click="openLoginPreview"
+              >
+                打开全屏预览
+              </button>
+            </div>
+
+            <button
+              type="button"
+              class="group relative h-40 w-full overflow-hidden border border-white/20 rounded-2xl text-left shadow-sm transition-all duration-300 dark:border-white/10 hover:shadow-lg hover:shadow-black/10"
+              :style="loginPreviewBackgroundStyle"
+              @click="openLoginPreview"
             >
-              <div v-if="appStore.loginBackground" class="absolute inset-0 bg-black/20" />
+              <div v-if="loginPreviewUsesCustomBackground" class="absolute inset-0" :style="loginPreviewMaskStyle" />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10 opacity-80" />
               <div class="absolute inset-0 flex items-center justify-center">
-                <div class="glass-text-main border border-white/20 rounded bg-white/60 px-3 py-1 text-[10px] backdrop-blur-md dark:bg-black/40 dark:text-white">
+                <div class="glass-text-main border border-white/25 rounded-xl bg-white/55 px-4 py-2 text-xs font-medium shadow-lg backdrop-blur-md transition-transform duration-300 dark:bg-black/40 dark:text-white group-hover:scale-105">
                   玻璃拟态预览
+                </div>
+              </div>
+              <div class="absolute bottom-3 left-3 border border-white/20 rounded-full bg-black/25 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-md">
+                遮罩 {{ appStore.loginBackgroundOverlayOpacity }}%
+              </div>
+              <div class="absolute bottom-3 right-3 border border-white/20 rounded-full bg-black/25 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-md">
+                模糊 {{ appStore.loginBackgroundBlur }}px
+              </div>
+            </button>
+
+            <div
+              class="relative h-36 overflow-hidden border border-white/20 rounded-2xl dark:border-white/10"
+              :style="loginPreviewBackgroundStyle"
+            >
+              <div v-if="loginPreviewUsesCustomBackground" class="absolute inset-0" :style="appScenePreviewMaskStyle" />
+              <div class="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/20" />
+              <div class="absolute left-3 top-3 rounded-full border border-white/20 bg-black/25 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-md">
+                主界面氛围预览
+              </div>
+              <div class="absolute inset-0 flex gap-3 p-4">
+                <div class="w-20 border border-white/15 rounded-2xl bg-white/12 p-3 backdrop-blur-xl">
+                  <div class="mb-3 h-6 w-6 rounded-lg bg-white/70" />
+                  <div class="space-y-2">
+                    <div class="h-2 rounded bg-white/40" />
+                    <div class="h-2 rounded bg-white/20" />
+                    <div class="h-2 rounded bg-white/20" />
+                  </div>
+                </div>
+                <div class="flex flex-1 flex-col gap-3">
+                  <div class="border border-white/15 rounded-2xl bg-white/14 p-3 backdrop-blur-xl">
+                    <div class="h-3 w-36 rounded bg-white/55" />
+                  </div>
+                  <div class="grid flex-1 grid-cols-2 gap-3">
+                    <div class="border border-white/15 rounded-2xl bg-white/12 p-3 backdrop-blur-xl" />
+                    <div class="border border-white/15 rounded-2xl bg-white/12 p-3 backdrop-blur-xl" />
+                  </div>
+                </div>
+              </div>
+              <div class="absolute bottom-3 right-3 border border-white/20 rounded-full bg-black/25 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-md">
+                {{ appStore.backgroundScope === 'login_only' ? '当前未对主界面启用' : `遮罩 ${appStore.appBackgroundOverlayOpacity}% / 模糊 ${appStore.appBackgroundBlur}px` }}
+              </div>
+            </div>
+
+            <p v-if="loginPreviewLoading" class="text-xs text-amber-500">
+              正在验证图片链接，加载完成后会自动应用到预览。
+            </p>
+            <p v-else-if="loginPreviewLoadFailed" class="text-xs text-rose-400">
+              当前图片链接加载失败，预览已回退到默认渐变。建议使用可直接访问的 JPG / PNG / WebP 地址。
+            </p>
+            <p v-else class="glass-text-muted text-xs">
+              缩略图和全屏弹窗都会按登录页的玻璃拟态结构渲染，便于判断背景是否压字。
+            </p>
+          </div>
+        </div>
+
+        <div class="border-t border-white/10 pt-5">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="glass-text-main text-sm font-bold">
+                背景预设图库
+              </div>
+              <p class="glass-text-muted mt-1 text-xs">
+                点击预设会先套用到当前表单，确认效果后再点“应用背景设置”。
+              </p>
+            </div>
+            <div class="glass-text-muted text-[11px]">
+              当前参数：遮罩 {{ appStore.loginBackgroundOverlayOpacity }}% / 模糊 {{ appStore.loginBackgroundBlur }}px
+            </div>
+          </div>
+
+          <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <button
+              v-for="preset in orderedLoginBackgroundPresets"
+              :key="preset.key"
+              type="button"
+              class="group overflow-hidden border rounded-2xl bg-black/5 text-left transition-all duration-300 dark:bg-white/5 hover:-translate-y-1 hover:shadow-xl"
+              :class="isSelectedLoginBackgroundPreset(preset)
+                ? 'border-primary-500 shadow-lg shadow-primary-500/15'
+                : 'border-white/10 dark:border-white/10'"
+              @click="applyBackgroundPreset(preset)"
+            >
+              <div
+                class="relative h-32 overflow-hidden"
+                :style="preset.url
+                  ? { backgroundImage: `url(${preset.url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                  : { background: 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)' }"
+              >
+                <div
+                  v-if="preset.url"
+                  class="absolute inset-0"
+                  :style="{
+                    backgroundColor: `rgba(0, 0, 0, ${preset.overlayOpacity / 100})`,
+                    backdropFilter: `blur(${preset.blur}px)`,
+                    WebkitBackdropFilter: `blur(${preset.blur}px)`,
+                  }"
+                />
+                <div class="absolute left-3 top-3 rounded-full border border-white/20 bg-black/25 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-md">
+                  {{ preset.themeKey === appStore.colorTheme ? '当前主题推荐' : (preset.badge || '预设') }}
+                </div>
+                <div class="absolute bottom-3 right-3 rounded-full border border-white/20 bg-black/25 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-md">
+                  {{ preset.overlayOpacity }}% / {{ preset.blur }}px
+                </div>
+              </div>
+
+              <div class="space-y-2 p-3">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="glass-text-main text-sm font-semibold">{{ preset.title }}</span>
+                  <span
+                    v-if="isSelectedLoginBackgroundPreset(preset)"
+                    class="rounded-full bg-primary-500/15 px-2 py-0.5 text-[10px] font-bold text-primary-500"
+                  >
+                    当前
+                  </span>
+                </div>
+                <div v-if="preset.themeKey" class="glass-text-muted text-[11px]">
+                  对应主题：{{ getThemeOption(preset.themeKey).name }}
+                </div>
+                <p class="glass-text-muted text-xs leading-5">
+                  {{ preset.description }}
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  <Teleport to="body">
+    <div v-if="loginPreviewVisible" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        class="absolute inset-0 bg-black/65 backdrop-blur-md"
+        @click="loginPreviewVisible = false"
+      />
+
+      <div class="relative z-10 max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-[28px] border border-white/20 shadow-2xl dark:border-white/10">
+        <div
+          class="relative min-h-[78vh] overflow-hidden"
+          :style="loginPreviewBackgroundStyle"
+        >
+          <div v-if="loginPreviewUsesCustomBackground" class="absolute inset-0" :style="loginPreviewMaskStyle" />
+          <div v-else class="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/5" />
+
+          <div class="absolute left-5 top-5 z-20 rounded-full border border-white/20 bg-black/25 px-4 py-1.5 text-xs text-white/90 backdrop-blur-md">
+            登录页玻璃拟态预览
+          </div>
+          <div class="absolute left-5 top-16 z-20 rounded-full border border-white/20 bg-black/25 px-4 py-1.5 text-xs text-white/90 backdrop-blur-md">
+            遮罩 {{ appStore.loginBackgroundOverlayOpacity }}% · 模糊 {{ appStore.loginBackgroundBlur }}px
+          </div>
+
+          <button
+            type="button"
+            class="absolute right-5 top-5 z-20 h-10 w-10 flex items-center justify-center rounded-full border border-white/20 bg-black/25 text-white/90 backdrop-blur-md transition-colors hover:bg-black/40"
+            @click="loginPreviewVisible = false"
+          >
+            <div class="i-carbon-close text-lg" />
+          </button>
+
+          <div class="relative z-10 min-h-[78vh] flex items-center justify-center px-5 py-12 lg:px-10">
+            <div class="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div class="hidden border border-white/20 rounded-[28px] bg-white/10 p-8 text-white shadow-2xl backdrop-blur-xl lg:flex lg:flex-col lg:justify-between">
+                <div>
+                  <div class="mb-6 h-16 w-16 flex items-center justify-center rounded-3xl bg-white text-emerald-500 shadow-xl">
+                    <div class="i-carbon-sprout text-3xl" />
+                  </div>
+                  <h3 class="text-3xl font-black tracking-tight">
+                    御农·QQ 农场智能助手
+                  </h3>
+                  <p class="mt-3 max-w-md text-sm leading-6 text-white/80">
+                    这里模拟的是登录页左侧品牌区和右侧表单卡片的叠层效果，主要用来判断背景图是否会干扰按钮、标题和输入区可读性。
+                  </p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="rounded-2xl border border-white/15 bg-white/10 p-4">
+                    <div class="i-carbon-flash mb-2 text-xl" />
+                    <div class="text-sm font-semibold">
+                      极速自动化
+                    </div>
+                  </div>
+                  <div class="rounded-2xl border border-white/15 bg-white/10 p-4">
+                    <div class="i-carbon-security mb-2 text-xl" />
+                    <div class="text-sm font-semibold">
+                      安全隔离
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="border border-white/25 rounded-[28px] bg-white/18 p-5 shadow-2xl backdrop-blur-2xl dark:bg-black/25 lg:p-8">
+                <div class="mx-auto max-w-md">
+                  <div class="mb-6 flex items-center gap-3 text-white">
+                    <div class="h-11 w-11 flex items-center justify-center rounded-2xl bg-white/80 text-emerald-500 shadow-lg">
+                      <div class="i-carbon-sprout text-xl" />
+                    </div>
+                    <div>
+                      <div class="text-lg font-bold">
+                        欢迎回来
+                      </div>
+                      <div class="text-xs text-white/80">
+                        预览背景图在真实登录页中的玻璃卡片表现
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="space-y-4">
+                    <div class="rounded-2xl border border-white/20 bg-white/35 px-4 py-3 text-sm text-white/85 backdrop-blur-md dark:bg-black/25">
+                      用户名 / 账号
+                    </div>
+                    <div class="rounded-2xl border border-white/20 bg-white/35 px-4 py-3 text-sm text-white/85 backdrop-blur-md dark:bg-black/25">
+                      密码
+                    </div>
+                    <div class="rounded-2xl bg-white/85 px-4 py-3 text-center text-sm font-bold text-slate-800 shadow-lg">
+                      登录按钮预览
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 text-center text-xs text-white/85">
+                      <div class="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-md">
+                        自动化
+                      </div>
+                      <div class="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-md">
+                        多账号
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <div
+            v-if="loginPreviewLoadFailed"
+            class="absolute bottom-5 left-5 right-5 z-20 rounded-2xl border border-rose-200/40 bg-rose-500/20 px-4 py-3 text-sm text-white backdrop-blur-xl"
+          >
+            当前图片链接无法直接加载，预览已自动回退为默认渐变背景。正式保存前建议先换成可直链图片。
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <Teleport to="body">
     <div v-if="reportDetailVisible && reportDetailItem" class="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         class="absolute inset-0 bg-gray-900/45 backdrop-blur-sm dark:bg-black/70"

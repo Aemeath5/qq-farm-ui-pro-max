@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useStorage } from '@vueuse/core'
-import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
-import { RouterView } from 'vue-router'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useStatusStore } from '@/stores/status'
 import { adminToken } from '@/utils/auth'
@@ -13,11 +13,29 @@ const ToastContainer = defineAsyncComponent(() => import('@/components/ToastCont
 
 const appStore = useAppStore()
 const statusStore = useStatusStore()
+const route = useRoute()
 
 // 全局更新弹窗逻辑
 const currentVersion = __APP_VERSION__
 const seenVersion = useStorage('app_seen_version', '')
 const showUpdateModal = ref(false)
+const hasCustomBackground = computed(() => !!appStore.loginBackground.trim())
+const isLoginRoute = computed(() => route.name === 'login')
+const showWorkspaceBackground = computed(() => {
+  if (!hasCustomBackground.value || isLoginRoute.value)
+    return false
+  return appStore.backgroundScope === 'login_and_app' || appStore.backgroundScope === 'global'
+})
+const workspaceBackgroundStyle = computed(() => ({
+  backgroundImage: `url(${appStore.loginBackground.trim()})`,
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
+}))
+const workspaceBackgroundMaskStyle = computed(() => ({
+  backgroundColor: `rgba(8, 12, 24, ${appStore.appBackgroundOverlayOpacity / 100})`,
+  backdropFilter: `blur(${appStore.appBackgroundBlur}px)`,
+  WebkitBackdropFilter: `blur(${appStore.appBackgroundBlur}px)`,
+}))
 
 onMounted(() => {
   appStore.fetchUIConfig()
@@ -40,8 +58,17 @@ watch(adminToken, (newToken) => {
 
 <template>
   <div class="relative z-0 h-screen w-screen overflow-hidden bg-theme-bg text-gray-700 transition-colors duration-300 dark:bg-theme-darkbg dark:text-gray-200">
+    <div
+      v-if="showWorkspaceBackground"
+      class="app-scene-background"
+      :style="workspaceBackgroundStyle"
+    >
+      <div class="app-scene-background__mask" :style="workspaceBackgroundMaskStyle" />
+      <div class="app-scene-background__vignette" />
+    </div>
+
     <!-- 动态流动光球背景层 -->
-    <div class="mesh-bg">
+    <div class="mesh-bg" :class="{ 'mesh-bg-muted': showWorkspaceBackground }">
       <div class="mesh-orb orb-1" />
       <div class="mesh-orb orb-2" />
       <div class="mesh-orb orb-3" />
@@ -79,5 +106,33 @@ watch(adminToken, (newToken) => {
 body {
   margin: 0;
   font-family: 'DM Sans', sans-serif;
+}
+
+.app-scene-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+
+.app-scene-background__mask {
+  position: absolute;
+  inset: 0;
+}
+
+.app-scene-background__vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.08), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 32%, rgba(0, 0, 0, 0.28));
+}
+
+.mesh-bg.mesh-bg-muted {
+  opacity: 0.24 !important;
+  mix-blend-mode: screen;
 }
 </style>

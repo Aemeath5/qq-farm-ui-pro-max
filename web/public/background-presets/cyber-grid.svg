@@ -1,0 +1,57 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <g opacity="0.9">
+    <circle cx="276" cy="173" r="184" fill="url(#glowA)"/>
+    <circle cx="1252" cy="210" r="196" fill="url(#glowB)"/>
+    <circle cx="844" cy="668" r="244" fill="url(#glowC)"/>
+  </g>
+  <path d="M0 626L318 496L548 592L784 435L1010 560L1296 394L1600 538V900H0V626Z" fill="url(#terrain)" fill-opacity="0.58"/>
+  <path d="M0 704L232 620L435 706L660 570L876 690L1108 562L1348 672L1600 566V900H0V704Z" fill="url(#terrain2)" fill-opacity="0.72"/>
+  <g opacity="0.24" stroke="#78F6FF">
+    <path d="M0 224H1600"/>
+    <path d="M0 320H1600"/>
+    <path d="M0 416H1600"/>
+    <path d="M0 512H1600"/>
+    <path d="M0 608H1600"/>
+    <path d="M0 704H1600"/>
+    <path d="M160 0V900"/>
+    <path d="M360 0V900"/>
+    <path d="M560 0V900"/>
+    <path d="M760 0V900"/>
+    <path d="M960 0V900"/>
+    <path d="M1160 0V900"/>
+    <path d="M1360 0V900"/>
+  </g>
+  <g opacity="0.65">
+    <path d="M210 198L290 160L382 194L320 240L210 198Z" fill="#7AF6FF" fill-opacity="0.55"/>
+    <path d="M1118 236L1204 188L1324 244L1228 298L1118 236Z" fill="#9B7BFF" fill-opacity="0.56"/>
+    <path d="M713 152L784 112L858 153L786 199L713 152Z" fill="#6CF3D8" fill-opacity="0.48"/>
+  </g>
+  <defs>
+    <linearGradient id="bg" x1="133" y1="46" x2="1405" y2="862" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#061123"/>
+      <stop offset="0.48" stop-color="#102047"/>
+      <stop offset="1" stop-color="#1E1443"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(276 173) rotate(90) scale(184)">
+      <stop stop-color="#5CF4FF"/>
+      <stop offset="1" stop-color="#5CF4FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1252 210) rotate(90) scale(196)">
+      <stop stop-color="#8B63FF"/>
+      <stop offset="1" stop-color="#8B63FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowC" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(844 668) rotate(90) scale(244)">
+      <stop stop-color="#0CEAC1"/>
+      <stop offset="1" stop-color="#0CEAC1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="terrain" x1="256" y1="438" x2="1398" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1B7CC6"/>
+      <stop offset="1" stop-color="#502C95"/>
+    </linearGradient>
+    <linearGradient id="terrain2" x1="165" y1="575" x2="1502" y2="901" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0FD2E5"/>
+      <stop offset="1" stop-color="#6A3FE0"/>
+    </linearGradient>
+  </defs>
+</svg>

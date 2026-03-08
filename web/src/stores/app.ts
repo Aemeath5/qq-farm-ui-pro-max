@@ -4,7 +4,19 @@ import { computed, ref, watch } from 'vue'
 import api from '@/api'
 
 const THEME_KEY = 'ui_theme'
+const DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY = 30
+const DEFAULT_LOGIN_BACKGROUND_BLUR = 2
+const DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY = 60
+const DEFAULT_APP_BACKGROUND_BLUR = 8
 type ThemeMode = 'light' | 'dark' | 'auto'
+type BackgroundScope = 'login_only' | 'login_and_app' | 'global'
+
+function clampUiNumber(value: unknown, fallback: number, min: number, max: number) {
+  const num = Number(value)
+  if (!Number.isFinite(num))
+    return fallback
+  return Math.min(max, Math.max(min, Math.round(num)))
+}
 
 /**
  * 日出日落简易算法（基于太阳赤纬近似公式）
@@ -94,6 +106,11 @@ export const useAppStore = defineStore('app', () => {
 
   // 登录页背景图
   const loginBackground = ref(localStorage.getItem('login_background') || '')
+  const backgroundScope = useStorage<BackgroundScope>('background_scope', 'login_only')
+  const loginBackgroundOverlayOpacity = useStorage('login_background_overlay_opacity', DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY)
+  const loginBackgroundBlur = useStorage('login_background_blur', DEFAULT_LOGIN_BACKGROUND_BLUR)
+  const appBackgroundOverlayOpacity = useStorage('app_background_overlay_opacity', DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY)
+  const appBackgroundBlur = useStorage('app_background_blur', DEFAULT_APP_BACKGROUND_BLUR)
 
   // 最终的深色状态（对外暴露）
   const isDark = computed(() => {
@@ -163,7 +180,18 @@ export const useAppStore = defineStore('app', () => {
     try {
       const res = await api.get('/api/ui-config')
       if (res.data.ok && res.data.data) {
-        const { theme, loginBackground: bg, colorTheme: ct, performanceMode: pm, timestamp: svrTimestamp } = res.data.data
+        const {
+          theme,
+          loginBackground: bg,
+          backgroundScope: bgScope,
+          loginBackgroundOverlayOpacity: overlayOpacity,
+          loginBackgroundBlur: blur,
+          appBackgroundOverlayOpacity: appOverlayOpacity,
+          appBackgroundBlur: appBlur,
+          colorTheme: ct,
+          performanceMode: pm,
+          timestamp: svrTimestamp,
+        } = res.data.data
 
         // 仲裁：如果本地快照比云端新，拒绝下发覆盖
         if (svrTimestamp !== undefined && svrTimestamp < uiTimestamp.value) {
@@ -183,6 +211,21 @@ export const useAppStore = defineStore('app', () => {
           loginBackground.value = bg
           localStorage.setItem('login_background', bg)
         }
+        if (bgScope !== undefined && ['login_only', 'login_and_app', 'global'].includes(bgScope)) {
+          backgroundScope.value = bgScope as BackgroundScope
+        }
+        if (overlayOpacity !== undefined) {
+          loginBackgroundOverlayOpacity.value = clampUiNumber(overlayOpacity, DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY, 0, 80)
+        }
+        if (blur !== undefined) {
+          loginBackgroundBlur.value = clampUiNumber(blur, DEFAULT_LOGIN_BACKGROUND_BLUR, 0, 12)
+        }
+        if (appOverlayOpacity !== undefined) {
+          appBackgroundOverlayOpacity.value = clampUiNumber(appOverlayOpacity, DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY, 20, 90)
+        }
+        if (appBlur !== undefined) {
+          appBackgroundBlur.value = clampUiNumber(appBlur, DEFAULT_APP_BACKGROUND_BLUR, 0, 18)
+        }
         if (ct !== undefined) {
           colorTheme.value = ct
         }
@@ -196,7 +239,17 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function setUIConfig(config: { theme?: ThemeMode, loginBackground?: string, colorTheme?: string, performanceMode?: boolean }) {
+  async function setUIConfig(config: {
+    theme?: ThemeMode
+    loginBackground?: string
+    backgroundScope?: BackgroundScope
+    loginBackgroundOverlayOpacity?: number
+    loginBackgroundBlur?: number
+    appBackgroundOverlayOpacity?: number
+    appBackgroundBlur?: number
+    colorTheme?: string
+    performanceMode?: boolean
+  }) {
     try {
       const newTimestamp = Date.now()
       await api.post('/api/settings/theme', { ...config, timestamp: newTimestamp })
@@ -211,6 +264,21 @@ export const useAppStore = defineStore('app', () => {
       if (config.loginBackground !== undefined) {
         loginBackground.value = config.loginBackground
         localStorage.setItem('login_background', config.loginBackground)
+      }
+      if (config.backgroundScope !== undefined) {
+        backgroundScope.value = config.backgroundScope
+      }
+      if (config.loginBackgroundOverlayOpacity !== undefined) {
+        loginBackgroundOverlayOpacity.value = clampUiNumber(config.loginBackgroundOverlayOpacity, DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY, 0, 80)
+      }
+      if (config.loginBackgroundBlur !== undefined) {
+        loginBackgroundBlur.value = clampUiNumber(config.loginBackgroundBlur, DEFAULT_LOGIN_BACKGROUND_BLUR, 0, 12)
+      }
+      if (config.appBackgroundOverlayOpacity !== undefined) {
+        appBackgroundOverlayOpacity.value = clampUiNumber(config.appBackgroundOverlayOpacity, DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY, 20, 90)
+      }
+      if (config.appBackgroundBlur !== undefined) {
+        appBackgroundBlur.value = clampUiNumber(config.appBackgroundBlur, DEFAULT_APP_BACKGROUND_BLUR, 0, 18)
       }
       if (config.colorTheme !== undefined) {
         colorTheme.value = config.colorTheme
@@ -302,6 +370,11 @@ export const useAppStore = defineStore('app', () => {
     performanceMode,
     themeChartPalette,
     loginBackground,
+    backgroundScope,
+    loginBackgroundOverlayOpacity,
+    loginBackgroundBlur,
+    appBackgroundOverlayOpacity,
+    appBackgroundBlur,
     toggleDark,
     toggleSidebar,
     closeSidebar,

@@ -249,7 +249,8 @@ function createDataProvider(options) {
             if (store && typeof store.getAccountFull === 'function') {
                 const fullAcc = await store.getAccountFull(acc.id);
                 if (fullAcc) {
-                    acc = { ...fullAcc, ...acc };
+                    // 数据库里的完整账号记录应覆盖列表缓存，避免新 code 被旧缓存回填
+                    acc = { ...acc, ...fullAcc };
                 }
             }
             return !!(await startWorker(acc));

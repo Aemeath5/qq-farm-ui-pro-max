@@ -299,12 +299,12 @@ async function handleSafeCheck(acc: any) {
               <img v-if="getAvatarUrl(acc)" :src="getAvatarUrl(acc)" class="h-full w-full object-cover" @error="(e) => markFailed((e.target as HTMLImageElement).src)">
               <div v-else class="i-carbon-user glass-text-muted text-2xl" />
             </div>
-            <div>
-              <h3 class="text-lg font-bold">
+            <div class="min-w-0 flex-1">
+              <h3 class="max-w-[140px] truncate text-lg font-bold" :title="acc.name || acc.nick || acc.id">
                 {{ acc.name || acc.nick || acc.id }}
               </h3>
               <div class="glass-text-muted mt-1 flex items-center gap-2 text-xs">
-                <span>QQ: {{ acc.uin || '未绑定' }}</span>
+                <span class="truncate">QQ: {{ acc.uin || '未绑定' }}</span>
               </div>
             </div>
           </div>

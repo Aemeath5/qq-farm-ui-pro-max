@@ -238,6 +238,9 @@ useIntervalFn(loadBag, 60000)
             · 手动出售前强制预览
           </span>
         </div>
+        <div class="mt-2 text-xs text-amber-500/90">
+          当前仅支持出售果实，种子、化肥、狗粮、礼包等物品不会出现在出售勾选中。
+        </div>
       </div>
 
       <div class="glass-panel rounded-xl p-4 shadow">

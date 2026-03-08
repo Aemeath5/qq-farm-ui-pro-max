@@ -2,6 +2,7 @@
 
 <script setup lang="ts">
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
+import { getThemeBackgroundPreset, THEME_OPTIONS } from '@/constants/ui-appearance'
 import { useAppStore } from '@/stores/app'
 
 defineProps<{
@@ -13,17 +14,21 @@ const emit = defineEmits<{
 }>()
 
 const appStore = useAppStore()
-
-// 五大预设系统主题色
-const THEME_OPTIONS = [
-  { key: 'default', color: '#22c55e', bg: 'bg-green-500', bgDark: 'bg-green-600', shadow: 'shadow-[0_0_8px_rgba(34,197,94,0.6)]', name: '御农翠绿 (默认)', desc: '经典护眼配色，生机盎然。代表农业的丰收与稳定。' },
-  { key: 'sakura', color: '#ffc0cb', bg: 'bg-[#ffc0cb]', bgDark: 'bg-pink-400', shadow: 'shadow-[0_0_8px_rgba(255,192,203,0.8)]', name: '樱花粉黛 (Sakura)', desc: '活泼灵动的少女粉，猛男标配，点缀极简的玫瑰边框。' },
-  { key: 'cyber', color: '#8b5cf6', bg: 'bg-violet-500', bgDark: 'bg-fuchsia-600', shadow: 'shadow-[0_0_8px_rgba(139,92,246,0.6)]', name: '全息赛博 (Neon)', desc: '高对比度的电竞荧光紫，搭配极夜背景，凸显极客执行力。' },
-  { key: 'elegant', color: '#eab308', bg: 'bg-yellow-500', bgDark: 'bg-amber-600', shadow: 'shadow-[0_0_8px_rgba(234,179,8,0.6)]', name: '尊贵黯金 (Elegant)', desc: '高端优雅，黄黑相间。适合长期挂机的大佬使用。' },
-  { key: 'ocean', color: '#0ea5e9', bg: 'bg-sky-500', bgDark: 'bg-cyan-600', shadow: 'shadow-[0_0_8px_rgba(14,165,233,0.6)]', name: '深海矩阵 (Ocean)', desc: '冷静、理智的数据化浅蓝色调，带来流畅的数据监控体验。' },
-]
 function changeTheme(themeKey: string) {
   appStore.setUIConfig({ colorTheme: themeKey })
+}
+
+function applyThemeBackground(themeKey: string) {
+  const preset = getThemeBackgroundPreset(themeKey)
+  appStore.setUIConfig({
+    colorTheme: themeKey,
+    loginBackground: preset.url,
+    backgroundScope: 'login_and_app',
+    loginBackgroundOverlayOpacity: preset.overlayOpacity,
+    loginBackgroundBlur: preset.blur,
+    appBackgroundOverlayOpacity: preset.appOverlayOpacity,
+    appBackgroundBlur: preset.appBlur,
+  })
 }
 </script>
 
@@ -150,6 +155,17 @@ function changeTheme(themeKey: string) {
                   <div class="h-6 w-6 rounded" :class="t.bg" />
                   <div class="h-6 w-6 rounded" :class="t.bgDark" />
                   <div class="glass-panel h-6 w-6 border rounded" />
+                </div>
+                <div class="relative z-10 mt-4 flex items-center justify-between gap-3">
+                  <span class="glass-text-muted text-[10px]">
+                    可一键同步同主题背景预设
+                  </span>
+                  <button
+                    class="rounded-full border border-white/20 bg-white/30 px-3 py-1 text-[10px] font-bold transition-colors dark:border-white/10 dark:bg-black/25 hover:bg-white/45 dark:hover:bg-black/35"
+                    @click.stop="applyThemeBackground(t.key)"
+                  >
+                    套用主题背景
+                  </button>
                 </div>
               </div>
             </template>

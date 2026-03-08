@@ -76,6 +76,18 @@ const DEFAULT_TRADE_CONFIG = {
         previewBeforeManualSell: false,
     },
 };
+const DEFAULT_UI_CONFIG = {
+    theme: 'dark',
+    loginBackground: '',
+    backgroundScope: 'login_only',
+    loginBackgroundOverlayOpacity: 30,
+    loginBackgroundBlur: 2,
+    appBackgroundOverlayOpacity: 60,
+    appBackgroundBlur: 8,
+    colorTheme: 'default',
+    performanceMode: true,
+    timestamp: 0,
+};
 // ============ 全局配置 ============
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
@@ -157,9 +169,7 @@ let accountFallbackConfig = {
 const globalConfig = {
     accountConfigs: {},
     defaultAccountConfig: cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG),
-    ui: {
-        theme: 'dark',
-    },
+    ui: { ...DEFAULT_UI_CONFIG },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
     adminPasswordHash: '',
     thirdPartyApi: {},
@@ -169,6 +179,67 @@ const globalConfig = {
     },
     suspendUntilMap: {},
 };
+
+function clampUiNumber(value, fallback, min, max) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(num)));
+}
+
+function normalizeUIConfig(input, fallback = DEFAULT_UI_CONFIG) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const base = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_UI_CONFIG;
+    const rawTheme = String(src.theme !== undefined ? src.theme : base.theme || DEFAULT_UI_CONFIG.theme).toLowerCase();
+    const theme = rawTheme === 'light' || rawTheme === 'auto' ? rawTheme : 'dark';
+    const rawScope = String(src.backgroundScope !== undefined ? src.backgroundScope : base.backgroundScope || DEFAULT_UI_CONFIG.backgroundScope).toLowerCase();
+    const backgroundScope = new Set(['login_only', 'login_and_app', 'global']).has(rawScope)
+        ? rawScope
+        : DEFAULT_UI_CONFIG.backgroundScope;
+    const loginBackground = (src.loginBackground !== undefined && src.loginBackground !== null)
+        ? String(src.loginBackground).trim().slice(0, 2048)
+        : String(base.loginBackground || DEFAULT_UI_CONFIG.loginBackground);
+    const rawColorTheme = (src.colorTheme !== undefined && src.colorTheme !== null)
+        ? String(src.colorTheme).trim()
+        : String(base.colorTheme || DEFAULT_UI_CONFIG.colorTheme);
+    const colorTheme = rawColorTheme || DEFAULT_UI_CONFIG.colorTheme;
+    const rawTimestamp = Number.parseInt(src.timestamp, 10);
+    const fallbackTimestamp = Number.parseInt(base.timestamp, 10);
+
+    return {
+        theme,
+        loginBackground,
+        backgroundScope,
+        loginBackgroundOverlayOpacity: clampUiNumber(
+            src.loginBackgroundOverlayOpacity,
+            clampUiNumber(base.loginBackgroundOverlayOpacity, DEFAULT_UI_CONFIG.loginBackgroundOverlayOpacity, 0, 80),
+            0,
+            80,
+        ),
+        loginBackgroundBlur: clampUiNumber(
+            src.loginBackgroundBlur,
+            clampUiNumber(base.loginBackgroundBlur, DEFAULT_UI_CONFIG.loginBackgroundBlur, 0, 12),
+            0,
+            12,
+        ),
+        appBackgroundOverlayOpacity: clampUiNumber(
+            src.appBackgroundOverlayOpacity,
+            clampUiNumber(base.appBackgroundOverlayOpacity, DEFAULT_UI_CONFIG.appBackgroundOverlayOpacity, 20, 90),
+            20,
+            90,
+        ),
+        appBackgroundBlur: clampUiNumber(
+            src.appBackgroundBlur,
+            clampUiNumber(base.appBackgroundBlur, DEFAULT_UI_CONFIG.appBackgroundBlur, 0, 18),
+            0,
+            18,
+        ),
+        colorTheme,
+        performanceMode: src.performanceMode !== undefined ? !!src.performanceMode : !!base.performanceMode,
+        timestamp: Number.isFinite(rawTimestamp) && rawTimestamp >= 0
+            ? rawTimestamp
+            : (Number.isFinite(fallbackTimestamp) && fallbackTimestamp >= 0 ? fallbackTimestamp : DEFAULT_UI_CONFIG.timestamp),
+    };
+}
 
 function normalizeOfflineReminder(input) {
     const src = (input && typeof input === 'object') ? input : {};
@@ -545,6 +616,7 @@ async function loadGlobalConfigFromDB() {
         accountFallbackConfig = cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG);
         globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
         globalConfig.accountConfigs = {};
+        globalConfig.ui = { ...DEFAULT_UI_CONFIG };
 
         for (const r of rows) {
             let automation = {};
@@ -583,7 +655,7 @@ async function loadGlobalConfigFromDB() {
             }, accountFallbackConfig);
 
             if (adv.ui) {
-                globalConfig.ui = { ...globalConfig.ui, ...adv.ui };
+                globalConfig.ui = normalizeUIConfig({ ...globalConfig.ui, ...adv.ui }, globalConfig.ui);
             }
 
             // Cluster Config (Optional backwards compat from adv)
@@ -602,6 +674,7 @@ function sanitizeGlobalConfigBeforeSave() {
     // default 配置统一白名单净化
     accountFallbackConfig = normalizeAccountConfig(globalConfig.defaultAccountConfig, DEFAULT_ACCOUNT_CONFIG);
     globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
+    globalConfig.ui = normalizeUIConfig(globalConfig.ui, DEFAULT_UI_CONFIG);
 
     const currentAccountIds = new Set(
         normalizeAccountsData(loadAccounts()).accounts
@@ -645,7 +718,7 @@ function saveGlobalConfigImmediate() {
                     workflowConfig: normalizeWorkflowConfig(cfg.workflowConfig, DEFAULT_ACCOUNT_CONFIG.workflowConfig),
                     reportConfig: normalizeReportConfig(cfg.reportConfig, DEFAULT_ACCOUNT_CONFIG.reportConfig),
                     reportState: normalizeReportState(cfg.reportState, DEFAULT_ACCOUNT_CONFIG.reportState),
-                    ui: globalConfig.ui || {},
+                    ui: normalizeUIConfig(globalConfig.ui, DEFAULT_UI_CONFIG),
                     clusterConfig: globalConfig.clusterConfig || { dispatcherStrategy: 'round_robin' }
                 });
                 const automationKeys = cfg.automation || {};
@@ -717,7 +790,7 @@ function getConfigSnapshot(accountId) {
         workflowConfig: normalizeWorkflowConfig(cfg.workflowConfig, DEFAULT_ACCOUNT_CONFIG.workflowConfig),
         tradeConfig: normalizeTradeConfig(cfg.tradeConfig, DEFAULT_ACCOUNT_CONFIG.tradeConfig),
         reportConfig: normalizeReportConfig(cfg.reportConfig, DEFAULT_ACCOUNT_CONFIG.reportConfig),
-        ui: { ...globalConfig.ui },
+        ui: { ...normalizeUIConfig(globalConfig.ui, DEFAULT_UI_CONFIG) },
     };
 }
 
@@ -766,10 +839,7 @@ function applyConfigSnapshot(snapshot, options = {}) {
     }
 
     if (cfg.ui && typeof cfg.ui === 'object') {
-        const theme = String(cfg.ui.theme || '').toLowerCase();
-        if (theme === 'dark' || theme === 'light') {
-            globalConfig.ui.theme = theme;
-        }
+        globalConfig.ui = normalizeUIConfig({ ...globalConfig.ui, ...cfg.ui }, globalConfig.ui || DEFAULT_UI_CONFIG);
     }
 
     if (cfg.stealFilter && typeof cfg.stealFilter === 'object') {
@@ -1018,12 +1088,12 @@ function setReportState(accountId, state) {
 }
 
 function getUI() {
-    return { ...globalConfig.ui };
+    return { ...normalizeUIConfig(globalConfig.ui, DEFAULT_UI_CONFIG) };
 }
 
 function setUITheme(theme) {
     const t = String(theme || '').toLowerCase();
-    const next = (t === 'light') ? 'light' : 'dark';
+    const next = (t === 'light' || t === 'auto') ? t : 'dark';
     return applyConfigSnapshot({ ui: { theme: next } });
 }
 

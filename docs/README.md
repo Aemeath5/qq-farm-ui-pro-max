@@ -27,18 +27,19 @@
 10. **[性能基准](./PERFORMANCE_BENCHMARK.md)** - 性能测试报告
 11. **[Async 调用规范](./ASYNC_调用规范.md)** - Provider 与异步调用规范
 12. **[回归测试清单](./REGRESSION_TEST_CHECKLIST.md)** - 功能回归验证清单
+13. **[近期优化复盘](./RECENT_OPTIMIZATION_REVIEW_2026-03-08.md)** - 本轮问题、影响与优化建议
 
 ### 部署运维
 
-13. **[部署指南](./guides/DEPLOYMENT_GUIDE.md)** - 生产环境部署
-14. **[故障排除](./guides/TROUBLESHOOTING.md)** - 常见问题解决
-15. **[截图指南](./SCREENSHOT_GUIDE.md)** - 截图最佳实践
+14. **[部署指南](./guides/DEPLOYMENT_GUIDE.md)** - 生产环境部署
+15. **[故障排除](./guides/TROUBLESHOOTING.md)** - 常见问题解决
+16. **[截图指南](./SCREENSHOT_GUIDE.md)** - 截图最佳实践
 
 ### 架构设计
 
-16. **[数据库迁移](./DATABASE_MIGRATION_GUIDE.md)** - 迁移详细过程
-17. **[业务架构解析](./业务架构解析/)** - 系统架构说明
-18. **[更新日志](../CHANGELOG.DEVELOPMENT.md)** - 版本历史
+17. **[数据库迁移](./DATABASE_MIGRATION_GUIDE.md)** - 迁移详细过程
+18. **[业务架构解析](./业务架构解析/)** - 系统架构说明
+19. **[更新日志](../CHANGELOG.DEVELOPMENT.md)** - 版本历史
 
 ---
 

@@ -37,13 +37,25 @@ function createRuntimeState(options) {
     }
 
     function buildConfigSnapshotForAccount(accountId) {
+        const baseSnapshot = (typeof store.getConfigSnapshot === 'function')
+            ? (store.getConfigSnapshot(accountId) || {})
+            : {};
+
         return {
+            ...baseSnapshot,
             automation: store.getAutomation(accountId),
             plantingStrategy: store.getPlantingStrategy(accountId),
             preferredSeedId: store.getPreferredSeed(accountId),
             intervals: store.getIntervals(accountId),
             friendQuietHours: store.getFriendQuietHours(accountId),
             friendBlacklist: store.getFriendBlacklist(accountId),
+            stealFilter: typeof store.getStealFilterConfig === 'function' ? store.getStealFilterConfig(accountId) : baseSnapshot.stealFilter,
+            stealFriendFilter: typeof store.getStealFriendFilterConfig === 'function' ? store.getStealFriendFilterConfig(accountId) : baseSnapshot.stealFriendFilter,
+            stakeoutSteal: typeof store.getStakeoutStealConfig === 'function' ? store.getStakeoutStealConfig(accountId) : baseSnapshot.stakeoutSteal,
+            skipStealRadish: typeof store.getSkipStealRadishConfig === 'function' ? store.getSkipStealRadishConfig(accountId) : baseSnapshot.skipStealRadish,
+            forceGetAll: typeof store.getForceGetAllConfig === 'function' ? store.getForceGetAllConfig(accountId) : baseSnapshot.forceGetAll,
+            reportConfig: typeof store.getReportConfig === 'function' ? store.getReportConfig(accountId) : baseSnapshot.reportConfig,
+            reportState: typeof store.getReportState === 'function' ? store.getReportState(accountId) : baseSnapshot.reportState,
             __revision: configRevision,
         };
     }

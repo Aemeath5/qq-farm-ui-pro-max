@@ -106,6 +106,15 @@ export interface ReportLogPagination {
   totalPages: number
 }
 
+export interface ReportLogStats {
+  total: number
+  successCount: number
+  failedCount: number
+  testCount: number
+  hourlyCount: number
+  dailyCount: number
+}
+
 export interface TrialCardConfig {
   enabled?: boolean
   days?: number
@@ -189,6 +198,15 @@ export interface SettingsState {
 }
 
 export const useSettingStore = defineStore('setting', () => {
+  const createDefaultReportLogStats = (): ReportLogStats => ({
+    total: 0,
+    successCount: 0,
+    failedCount: 0,
+    testCount: 0,
+    hourlyCount: 0,
+    dailyCount: 0,
+  })
+
   const settings = ref<SettingsState>({
     plantingStrategy: 'preferred',
     preferredSeedId: 0,
@@ -291,6 +309,7 @@ export const useSettingStore = defineStore('setting', () => {
     total: 0,
     totalPages: 1,
   })
+  const reportLogStats = ref<ReportLogStats>(createDefaultReportLogStats())
 
   async function fetchSettings(accountId: string) {
     if (!accountId)
@@ -496,6 +515,42 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
+  async function fetchReportLogStats(accountId: string, options: { mode?: string, status?: string, sortOrder?: string, keyword?: string } = {}) {
+    if (!accountId) {
+      reportLogStats.value = createDefaultReportLogStats()
+      return reportLogStats.value
+    }
+    try {
+      const { data } = await api.get('/api/reports/history/stats', {
+        headers: { 'x-account-id': accountId },
+        params: {
+          mode: options.mode || '',
+          status: options.status || '',
+          sortOrder: options.sortOrder || 'desc',
+          keyword: options.keyword || '',
+        },
+      })
+      if (data && data.ok && data.data) {
+        reportLogStats.value = {
+          total: Number(data.data.total) || 0,
+          successCount: Number(data.data.successCount) || 0,
+          failedCount: Number(data.data.failedCount) || 0,
+          testCount: Number(data.data.testCount) || 0,
+          hourlyCount: Number(data.data.hourlyCount) || 0,
+          dailyCount: Number(data.data.dailyCount) || 0,
+        }
+        return reportLogStats.value
+      }
+      reportLogStats.value = createDefaultReportLogStats()
+      return reportLogStats.value
+    }
+    catch (e) {
+      console.error('获取经营汇报统计失败:', e)
+      reportLogStats.value = createDefaultReportLogStats()
+      return reportLogStats.value
+    }
+  }
+
   async function clearReportLogs(accountId: string) {
     if (!accountId)
       return { ok: false, error: '未选择账号' }
@@ -506,6 +561,7 @@ export const useSettingStore = defineStore('setting', () => {
       if (data && data.ok) {
         reportLogs.value = []
         reportLogPagination.value = { page: 1, pageSize: reportLogPagination.value.pageSize || 10, total: 0, totalPages: 1 }
+        reportLogStats.value = createDefaultReportLogStats()
         return { ok: true, data: data.data }
       }
       return { ok: false, error: data?.error || '清空失败' }
@@ -692,5 +748,5 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
-  return { settings, loading, timingLoading, reportLogs, reportLogPagination, fetchSettings, fetchReportLogs, clearReportLogs, deleteReportLogsByIds, exportReportLogs, saveSettings, saveOfflineConfig, sendReportTest, sendReport, changePassword, fetchTrialCardConfig, fetchThirdPartyApiConfig, saveThirdPartyApiConfig, fetchTimingConfig, saveTimingConfig, fetchClusterConfig, saveClusterConfig }
+  return { settings, loading, timingLoading, reportLogs, reportLogPagination, reportLogStats, fetchSettings, fetchReportLogs, fetchReportLogStats, clearReportLogs, deleteReportLogsByIds, exportReportLogs, saveSettings, saveOfflineConfig, sendReportTest, sendReport, changePassword, fetchTrialCardConfig, fetchThirdPartyApiConfig, saveThirdPartyApiConfig, fetchTimingConfig, saveTimingConfig, fetchClusterConfig, saveClusterConfig }
 })

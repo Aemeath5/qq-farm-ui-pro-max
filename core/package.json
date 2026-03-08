@@ -1,6 +1,6 @@
 {
   "name": "qq-farm-bot",
-  "version": "4.5.8",
+  "version": "4.5.9",
   "description": "",
   "license": "ISC",
   "author": "",
@@ -31,6 +31,7 @@
     "pushoo": "^0.1.11",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "winston": "^3.18.3",
     "ws": "^8.19.0"
   },

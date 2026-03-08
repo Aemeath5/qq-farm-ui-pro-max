@@ -323,6 +323,17 @@ function mapReportLogRows(rows) {
     }));
 }
 
+function createEmptyReportLogStats() {
+    return {
+        total: 0,
+        successCount: 0,
+        failedCount: 0,
+        testCount: 0,
+        hourlyCount: 0,
+        dailyCount: 0,
+    };
+}
+
 async function getReportLogs(accountId, options = {}) {
     const pool = getPool();
     if (!pool) {
@@ -352,6 +363,34 @@ async function getReportLogs(accountId, options = {}) {
         page,
         pageSize,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
+}
+
+async function getReportLogStats(accountId, options = {}) {
+    const pool = getPool();
+    if (!pool) {
+        return createEmptyReportLogStats();
+    }
+    const { whereSql, params } = buildReportLogWhereClause(accountId, options);
+    const [[row]] = await pool.execute(
+        `SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN ok = 1 THEN 1 ELSE 0 END) AS successCount,
+            SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failedCount,
+            SUM(CASE WHEN mode = 'test' THEN 1 ELSE 0 END) AS testCount,
+            SUM(CASE WHEN mode = 'hourly' THEN 1 ELSE 0 END) AS hourlyCount,
+            SUM(CASE WHEN mode = 'daily' THEN 1 ELSE 0 END) AS dailyCount
+         FROM report_logs
+         ${whereSql}`,
+        params,
+    );
+    return {
+        total: Number(row && row.total) || 0,
+        successCount: Number(row && row.successCount) || 0,
+        failedCount: Number(row && row.failedCount) || 0,
+        testCount: Number(row && row.testCount) || 0,
+        hourlyCount: Number(row && row.hourlyCount) || 0,
+        dailyCount: Number(row && row.dailyCount) || 0,
     };
 }
 
@@ -462,6 +501,7 @@ module.exports = {
     invalidateAnnouncementCache,
     insertReportLog,
     getReportLogs,
+    getReportLogStats,
     exportReportLogs,
     deleteReportLogsByIds,
     clearReportLogs,

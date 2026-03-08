@@ -15,13 +15,13 @@ const { Server: SocketIOServer } = require('socket.io');
 const { version } = require('../../package.json');
 const { CONFIG } = require('../config/config');
 const { getLevelExpProgress } = require('../config/gameConfig');
-const { getResourcePath } = require('../config/runtime-paths');
+const { ensureDataDir, getResourcePath } = require('../config/runtime-paths');
 const store = require('../models/store');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef, normalizeAccountRef, resolveAccountId } = require('../services/account-resolver');
 const { createModuleLogger } = require('../services/logger');
 const { getPool } = require('../services/mysql-db');
-const { getAnnouncements, saveAnnouncement, deleteAnnouncement, getReportLogs, exportReportLogs, deleteReportLogsByIds, clearReportLogs } = require('../services/database');
+const { getAnnouncements, saveAnnouncement, deleteAnnouncement, getReportLogs, getReportLogStats, exportReportLogs, deleteReportLogsByIds, clearReportLogs } = require('../services/database');
 const { MiniProgramLoginSession } = require('../services/qrlogin');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
 const { validateSettings } = require('../services/config-validator');
@@ -39,6 +39,12 @@ let app = null;
 let server = null;
 let provider = null; // DataProvider
 let io = null;
+
+function ensureUiBackgroundDir() {
+    const dir = path.join(ensureDataDir(), 'ui-backgrounds');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
 
 async function getAccountsSnapshot(options = {}) {
     if (typeof store.getAccountsFresh === 'function') {
@@ -121,7 +127,7 @@ function startAdminServer(dataProvider) {
     provider = dataProvider;
 
     app = express();
-    app.use(express.json());
+    app.use(express.json({ limit: '10mb' }));
     app.use(cookieParser());
 
     const authRequired = async (req, res, next) => {
@@ -293,6 +299,7 @@ function startAdminServer(dataProvider) {
         adminLogger.warn('web build not found', { webDist });
         app.get('/', (req, res) => res.send('web build not found. Please build the web project.'));
     }
+    app.use('/ui-backgrounds', express.static(ensureUiBackgroundDir()));
     app.use('/game-config', express.static(getResourcePath('gameConfig')));
 
     // 登录与鉴权 - 支持多用户 + PBKDF2 + 登录锁定
@@ -395,7 +402,7 @@ function startAdminServer(dataProvider) {
     // Farm Tools API 微服务接管
     app.use('/api', require('./farm-tools-routing'));
 
-    const PUBLIC_PATHS = new Set(['/login', '/auth/register', '/auth/refresh', '/auth/logout', '/qr/create', '/qr/check', '/notifications', '/trial-card', '/ui-config', '/ping']);
+    const PUBLIC_PATHS = new Set(['/login', '/auth/register', '/auth/refresh', '/auth/logout', '/qr/create', '/qr/check', '/notifications', '/announcement', '/trial-card', '/ui-config', '/ping']);
     app.use('/api', (req, res, next) => {
         if (PUBLIC_PATHS.has(req.path)) return next();
         authRequired(req, res, (err) => {
@@ -1141,10 +1148,17 @@ function startAdminServer(dataProvider) {
                 return res.json({ ok: true, data: store.getUI() });
             }
 
-            await provider.setUITheme((req.body || {}).theme);
+            if ((req.body || {}).theme !== undefined) {
+                await provider.setUITheme((req.body || {}).theme);
+            }
 
             const uiUpdates = {};
             if (req.body.loginBackground !== undefined) uiUpdates.loginBackground = req.body.loginBackground;
+            if (req.body.backgroundScope !== undefined) uiUpdates.backgroundScope = req.body.backgroundScope;
+            if (req.body.loginBackgroundOverlayOpacity !== undefined) uiUpdates.loginBackgroundOverlayOpacity = req.body.loginBackgroundOverlayOpacity;
+            if (req.body.loginBackgroundBlur !== undefined) uiUpdates.loginBackgroundBlur = req.body.loginBackgroundBlur;
+            if (req.body.appBackgroundOverlayOpacity !== undefined) uiUpdates.appBackgroundOverlayOpacity = req.body.appBackgroundOverlayOpacity;
+            if (req.body.appBackgroundBlur !== undefined) uiUpdates.appBackgroundBlur = req.body.appBackgroundBlur;
             if (req.body.colorTheme !== undefined) uiUpdates.colorTheme = req.body.colorTheme;
             if (req.body.performanceMode !== undefined) uiUpdates.performanceMode = req.body.performanceMode;
             if (req.body.timestamp !== undefined) uiUpdates.timestamp = req.body.timestamp;
@@ -1156,6 +1170,48 @@ function startAdminServer(dataProvider) {
             res.json({ ok: true, data: store.getUI() });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    app.post('/api/settings/ui-background/upload', async (req, res) => {
+        try {
+            if (req.currentUser && req.currentUser.role !== 'admin') {
+                return res.status(403).json({ ok: false, error: '仅管理员可上传登录页背景' });
+            }
+
+            const dataUrl = String(req.body?.dataUrl || '').trim();
+            const matches = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/i);
+            if (!matches) {
+                return res.status(400).json({ ok: false, error: '仅支持 PNG / JPG / WebP 图片上传' });
+            }
+
+            const mimeType = matches[1].toLowerCase();
+            const base64Payload = matches[2];
+            const buffer = Buffer.from(base64Payload, 'base64');
+            if (!buffer.length) {
+                return res.status(400).json({ ok: false, error: '图片内容为空' });
+            }
+            if (buffer.length > 5 * 1024 * 1024) {
+                return res.status(400).json({ ok: false, error: '图片压缩后仍超过 5MB，请换一张更小的图片' });
+            }
+
+            const ext = mimeType === 'image/png' ? 'png' : (mimeType === 'image/webp' ? 'webp' : 'jpg');
+            const filename = `login-bg-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+            const saveDir = ensureUiBackgroundDir();
+            const targetPath = path.join(saveDir, filename);
+
+            fs.writeFileSync(targetPath, buffer);
+
+            return res.json({
+                ok: true,
+                data: {
+                    url: `/ui-backgrounds/${filename}`,
+                    mimeType,
+                    size: buffer.length,
+                },
+            });
+        } catch (e) {
+            return res.status(500).json({ ok: false, error: e.message });
         }
     });
 
@@ -1313,6 +1369,22 @@ function startAdminServer(dataProvider) {
             const sortOrder = String(req.query.sortOrder !== undefined ? req.query.sortOrder : (req.query.order || '')).trim().toLowerCase();
             const keyword = String(req.query.keyword !== undefined ? req.query.keyword : (req.query.q || '')).trim();
             const data = await getReportLogs(id, { page, pageSize, mode, status, sortOrder, keyword });
+            res.json({ ok: true, data });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    app.get('/api/reports/history/stats', accountOwnershipRequired, async (req, res) => {
+        try {
+            const id = await getAccId(req);
+            if (!id) {
+                return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+            }
+            const mode = String(req.query.mode || '').trim().toLowerCase();
+            const status = String(req.query.status || '').trim().toLowerCase();
+            const keyword = String(req.query.keyword !== undefined ? req.query.keyword : (req.query.q || '')).trim();
+            const data = await getReportLogStats(id, { mode, status, keyword });
             res.json({ ok: true, data });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
@@ -2075,24 +2147,45 @@ function startAdminServer(dataProvider) {
         const logPath = path.join(__dirname, '../../../logs/development/Update.log');
         if (!fs.existsSync(logPath)) return [];
         const raw = fs.readFileSync(logPath, 'utf-8');
-        // 按连续空行（1个以上空行即可）分割条目
-        const blocks = raw.split(/\n\s*\n/).filter(b => b.trim());
+        const lines = raw.split(/\r?\n/);
         const entries = [];
         const dateRe = /^(\d{4}-\d{2}-\d{2})\s+(.+)$/;
         const versionRe = /前端[：:]\s*(v[\d.]+)/;
-        for (const block of blocks) {
-            const lines = block.trim().split('\n');
-            if (!lines.length) continue;
-            const firstLine = lines[0].trim();
-            const dm = firstLine.match(dateRe);
-            if (!dm) continue;
-            const date = dm[1];
-            const title = dm[2].trim();
-            const vm = firstLine.match(versionRe) || block.match(versionRe);
-            const version = vm ? vm[1] : '';
-            const content = lines.slice(1).join('\n').trim();
-            entries.push({ date, title, version, content });
+
+        let current = null;
+
+        const pushCurrent = () => {
+            if (!current) return;
+            const header = `${current.date} ${current.title}`;
+            const blockText = [header, ...current.contentLines].join('\n');
+            const vm = header.match(versionRe) || blockText.match(versionRe);
+            entries.push({
+                date: current.date,
+                title: current.title,
+                version: vm ? vm[1] : '',
+                content: current.contentLines.join('\n').trim(),
+            });
+            current = null;
+        };
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            const dm = trimmed.match(dateRe);
+            if (dm) {
+                pushCurrent();
+                current = {
+                    date: dm[1],
+                    title: dm[2].trim(),
+                    contentLines: [],
+                };
+                continue;
+            }
+            if (current) {
+                current.contentLines.push(line);
+            }
         }
+
+        pushCurrent();
         _notificationsCache = entries;
         _notificationsCacheTime = now;
         return entries;

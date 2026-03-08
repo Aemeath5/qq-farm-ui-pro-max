@@ -115,6 +115,38 @@ function getBagItems(bagReply) {
     return bagReply && bagReply.items ? bagReply.items : [];
 }
 
+function buildBagItemMeta(id) {
+    const normalizedId = Number(id) || 0;
+    const info = getItemById(normalizedId) || null;
+    let name = info && info.name ? String(info.name) : '';
+    let category = 'item';
+    if (normalizedId === 1 || normalizedId === 1001) {
+        name = '金币';
+        category = 'gold';
+    } else if (normalizedId === 1101) {
+        name = '经验';
+        category = 'exp';
+    } else if (getPlantByFruitId(normalizedId)) {
+        if (!name) name = `${getFruitName(normalizedId)}果实`;
+        category = 'fruit';
+    } else if (getPlantBySeedId(normalizedId)) {
+        const plant = getPlantBySeedId(normalizedId);
+        if (!name) name = `${plant && plant.name ? plant.name : '未知'}种子`;
+        category = 'seed';
+    }
+    if (!name) name = `物品${normalizedId}`;
+    return {
+        id: normalizedId,
+        name,
+        category,
+        image: getItemImageById(normalizedId),
+        itemType: info ? (Number(info.type) || 0) : 0,
+        price: info ? (Number(info.price) || 0) : 0,
+        level: info ? (Number(info.level) || 0) : 0,
+        interactionType: info && info.interaction_type ? String(info.interaction_type) : '',
+    };
+}
+
 function isFertilizerRelatedItemId(itemId) {
     const id = Number(itemId) || 0;
     if (id <= 0) return false;
@@ -313,43 +345,40 @@ async function getCurrentTotalsFromBag() {
 async function getBagDetail() {
     const bagReply = await getBag();
     const rawItems = getBagItems(bagReply);
+    const originalItems = [];
     const merged = new Map();
     for (const it of (rawItems || [])) {
         const id = toNum(it.id);
         const count = toNum(it.count);
+        const uid = toNum(it.uid);
         if (id <= 0 || count <= 0) continue;
-        const info = getItemById(id) || null;
-        let name = info && info.name ? String(info.name) : '';
-        let category = 'item';
-        if (id === 1 || id === 1001) {
-            name = '金币';
-            category = 'gold';
-        } else if (id === 1101) {
-            name = '经验';
-            category = 'exp';
-        } else if (getPlantByFruitId(id)) {
-            if (!name) name = `${getFruitName(id)}果实`;
-            category = 'fruit';
-        } else if (getPlantBySeedId(id)) {
-            const p = getPlantBySeedId(id);
-            if (!name) name = `${p && p.name ? p.name : '未知'}种子`;
-            category = 'seed';
-        }
-        if (!name) name = `物品${id}`;
-        const interactionType = info && info.interaction_type ? String(info.interaction_type) : '';
+        const meta = buildBagItemMeta(id);
+
+        originalItems.push({
+            id,
+            count,
+            uid,
+            name: meta.name,
+            category: meta.category,
+            image: meta.image,
+            price: meta.price,
+            level: meta.level,
+            itemType: meta.itemType,
+            interactionType: meta.interactionType,
+        });
 
         if (!merged.has(id)) {
             merged.set(id, {
                 id,
                 count: 0,
                 uid: 0, // 合并展示后 UID 不再有意义
-                name,
-                image: getItemImageById(id),
-                category,
-                itemType: info ? (Number(info.type) || 0) : 0,
-                price: info ? (Number(info.price) || 0) : 0,
-                level: info ? (Number(info.level) || 0) : 0,
-                interactionType,
+                name: meta.name,
+                image: meta.image,
+                category: meta.category,
+                itemType: meta.itemType,
+                price: meta.price,
+                level: meta.level,
+                interactionType: meta.interactionType,
                 hoursText: '',
             });
         }
@@ -373,7 +402,7 @@ async function getBagDetail() {
         if (cb !== ca) return cb - ca;
         return Number(a.id || 0) - Number(b.id || 0);
     });
-    return { totalKinds: items.length, items };
+    return { totalKinds: items.length, items, originalItems };
 }
 
 // ============ 出售逻辑 ============
@@ -437,14 +466,62 @@ function shouldKeepFruitItem(item, tradeConfig) {
     };
 }
 
-function buildSellPlanByPolicy(bagItems, tradeConfigInput) {
+function buildSellEntriesForFruit(rawItems, sellCount) {
+    const entries = [];
+    let remaining = Math.max(0, Number(sellCount) || 0);
+    for (const item of (rawItems || [])) {
+        if (remaining <= 0) break;
+        const count = Math.max(0, toNum(item && item.count));
+        if (count <= 0) continue;
+        const takeCount = Math.min(count, remaining);
+        if (takeCount <= 0) continue;
+        entries.push({
+            id: toNum(item && item.id),
+            count: takeCount,
+            uid: toNum(item && item.uid),
+        });
+        remaining -= takeCount;
+    }
+    return entries;
+}
+
+function summarizeSellEntries(entries = [], previewRows = []) {
+    const soldSummary = new Map();
+    for (const entry of (entries || [])) {
+        const id = toNum(entry && entry.id);
+        const count = Math.max(0, toNum(entry && entry.count));
+        if (id <= 0 || count <= 0) continue;
+        soldSummary.set(id, (soldSummary.get(id) || 0) + count);
+    }
+    return Array.from(soldSummary.entries()).map(([id, count]) => {
+        const matched = (previewRows || []).find(row => Number(row && row.id) === Number(id));
+        const name = matched && matched.name ? matched.name : `${getFruitName(id)}果实`;
+        return `${name}x${count}`;
+    });
+}
+
+function buildSellPlanByPolicy(bagDetailInput, tradeConfigInput) {
     const tradeConfig = getEffectiveTradeConfig(tradeConfigInput);
     const sellCfg = tradeConfig.sell || {};
-    const items = Array.isArray(bagItems) ? bagItems : [];
+    const bagDetail = (bagDetailInput && typeof bagDetailInput === 'object') ? bagDetailInput : {};
+    const items = Array.isArray(bagDetail.items) ? bagDetail.items : (Array.isArray(bagDetailInput) ? bagDetailInput : []);
+    const originalItems = Array.isArray(bagDetail.originalItems) ? bagDetail.originalItems : [];
     const rows = [];
+    const sellEntries = [];
     let totalSellCount = 0;
     let totalKeepCount = 0;
     let expectedGold = 0;
+    const originalFruitItemsById = new Map();
+
+    for (const item of originalItems) {
+        const id = toNum(item && item.id);
+        const count = Math.max(0, toNum(item && item.count));
+        if (!isFruitItemId(id) || count <= 0) continue;
+        if (!originalFruitItemsById.has(id)) {
+            originalFruitItemsById.set(id, []);
+        }
+        originalFruitItemsById.get(id).push(item);
+    }
 
     for (const item of items) {
         const id = toNum(item && item.id);
@@ -457,6 +534,8 @@ function buildSellPlanByPolicy(bagItems, tradeConfigInput) {
         const sellCount = Math.max(0, count - forcedKeepCount);
         const keepCount = count - sellCount;
         const unitPrice = Math.max(0, Number(item && item.price) || 0);
+        const fruitSellEntries = buildSellEntriesForFruit(originalFruitItemsById.get(id), sellCount);
+        sellEntries.push(...fruitSellEntries);
 
         rows.push({
             id,
@@ -491,22 +570,32 @@ function buildSellPlanByPolicy(bagItems, tradeConfigInput) {
         totalKeepCount,
         expectedGold,
         items: rows,
+        originalItems,
+        sellEntries,
     };
 }
 
 async function getSellPreview(tradeConfigInput) {
     const bag = await getBagDetail();
-    return buildSellPlanByPolicy(bag.items, tradeConfigInput);
+    return buildSellPlanByPolicy(bag, tradeConfigInput);
 }
 
 async function executeSellPlan(plan, options = {}) {
     const rows = Array.isArray(plan && plan.items) ? plan.items : [];
-    const toSell = rows
-        .filter(row => Number(row.sellCount || 0) > 0)
-        .map(row => ({
-            id: toLong(row.id),
-            count: toLong(row.sellCount),
-        }));
+    const toSell = Array.isArray(plan && plan.sellEntries) && plan.sellEntries.length > 0
+        ? plan.sellEntries
+            .map(item => ({
+                id: toLong(toNum(item && item.id)),
+                count: toLong(Math.max(0, toNum(item && item.count))),
+                uid: toNum(item && item.uid) > 0 ? toLong(toNum(item && item.uid)) : undefined,
+            }))
+            .filter(item => toNum(item.id) > 0 && toNum(item.count) > 0)
+        : rows
+            .filter(row => Number(row.sellCount || 0) > 0)
+            .map(row => ({
+                id: toLong(row.id),
+                count: toLong(row.sellCount),
+            }));
     if (toSell.length === 0) {
         return {
             ok: true,
@@ -592,14 +681,9 @@ async function executeSellPlan(plan, options = {}) {
         }
     }
 
-    const soldKinds = soldRows.length;
+    const soldKinds = new Set(soldRows.map(row => toNum(row && row.id)).filter(id => id > 0)).size;
     const soldCount = soldRows.reduce((sum, row) => sum + Math.max(0, toNum(row.count)), 0);
-    const soldNames = soldRows
-        .map(row => {
-            const item = rows.find(it => Number(it.id || 0) === Number(row.id || 0));
-            const name = item && item.name ? item.name : `物品#${toNum(row.id)}`;
-            return `${name}x${toNum(row.count)}`;
-        });
+    const soldNames = summarizeSellEntries(soldRows, rows);
 
     log('仓库', `出售 ${soldNames.join(', ')}${totalGoldEarned > 0 ? `，获得 ${totalGoldEarned} 金币` : ''}`, {
         module: 'warehouse',
@@ -646,15 +730,23 @@ async function sellSelectedItems(itemIds = [], options = {}) {
     const plan = await getSellPreview(options.tradeConfig);
     const filteredPlan = {
         ...plan,
-        items: (plan.items || []).map(item => {
+        items: (plan.items || []).map((item) => {
             if (!selectedIds.has(Number(item.id || 0))) {
-                return { ...item, sellCount: 0, sellValue: 0 };
+                return { ...item, sellCount: 0, keepCount: item.count, sellValue: 0 };
             }
             return options.respectPolicy === false
                 ? { ...item, sellCount: item.count, keepCount: 0, keepReasons: [], sellValue: item.count * item.unitPrice }
                 : item;
         }),
     };
+    if (options.respectPolicy === false) {
+        filteredPlan.sellEntries = (Array.isArray(plan.originalItems) ? plan.originalItems : [])
+            .filter(item => selectedIds.has(Number(item && item.id || 0)) && isFruitItemId(toNum(item && item.id)) && toNum(item && item.count) > 0)
+            .map(item => ({ id: toNum(item.id), count: toNum(item.count), uid: toNum(item.uid) }));
+    } else {
+        filteredPlan.sellEntries = (Array.isArray(plan.sellEntries) ? plan.sellEntries : [])
+            .filter(item => selectedIds.has(Number(item && item.id || 0)));
+    }
     return executeSellPlan(filteredPlan, {
         mode: 'manual_selected',
         event: 'sell_selected',

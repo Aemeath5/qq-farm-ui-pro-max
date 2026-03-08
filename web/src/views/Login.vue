@@ -258,26 +258,34 @@ async function handleRegister() {
   }
 }
 
+const hasCustomBackground = computed(() => !!appStore.loginBackground.trim())
+
 const backgroundStyle = computed(() => {
-  if (appStore.loginBackground) {
+  if (hasCustomBackground.value) {
     return {
-      backgroundImage: `url(${appStore.loginBackground})`,
+      backgroundImage: `url(${appStore.loginBackground.trim()})`,
       backgroundSize: 'cover',
       backgroundPosition: 'center',
     }
   }
   return {}
 })
+
+const backgroundOverlayStyle = computed(() => ({
+  backgroundColor: `rgba(0, 0, 0, ${appStore.loginBackgroundOverlayOpacity / 100})`,
+  backdropFilter: `blur(${appStore.loginBackgroundBlur}px)`,
+  WebkitBackdropFilter: `blur(${appStore.loginBackgroundBlur}px)`,
+}))
 </script>
 
 <template>
   <div
     class="login-page-root relative min-h-screen w-screen flex items-start justify-center overflow-y-auto py-4 transition-all duration-700 lg:items-center lg:py-0"
-    :class="[!appStore.loginBackground ? 'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800' : '']"
+    :class="[!hasCustomBackground ? 'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800' : '']"
     :style="backgroundStyle"
   >
     <!-- 背景遮罩 (仅在有自定义背景时增强可读性) -->
-    <div v-if="appStore.loginBackground" class="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+    <div v-if="hasCustomBackground" class="absolute inset-0" :style="backgroundOverlayStyle" />
 
     <div class="relative z-10 mx-4 my-4 max-w-5xl w-full lg:mx-auto lg:my-0">
       <div class="glass-panel flex flex-col rounded-2xl shadow-2xl shadow-black/20 ring-1 ring-white/20 lg:flex-row lg:rounded-3xl">

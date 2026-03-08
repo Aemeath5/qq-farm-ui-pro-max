@@ -1,0 +1,48 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <g opacity="0.8">
+    <circle cx="286" cy="215" r="168" fill="url(#bloomA)"/>
+    <circle cx="1258" cy="164" r="142" fill="url(#bloomB)"/>
+    <circle cx="1114" cy="626" r="232" fill="url(#bloomC)"/>
+  </g>
+  <path d="M0 640C159 592 313 575 451 594C650 620 772 727 954 735C1166 746 1311 610 1600 586V900H0V640Z" fill="url(#ground)"/>
+  <path d="M68 690C173 658 302 651 392 697C497 749 579 798 676 793C761 788 827 738 909 715C998 690 1095 703 1218 759C1316 804 1437 816 1600 758V900H68V690Z" fill="url(#ridge)" fill-opacity="0.58"/>
+  <g opacity="0.78">
+    <path d="M216 126C236 92 269 67 301 67C335 67 361 95 349 128C338 161 302 171 281 199C261 171 199 160 216 126Z" fill="#FFE6F1"/>
+    <path d="M1246 276C1268 239 1308 213 1342 220C1376 227 1396 259 1380 290C1365 320 1328 324 1300 347C1286 314 1228 307 1246 276Z" fill="#FFE4F2"/>
+    <path d="M978 178C994 150 1021 129 1049 129C1077 129 1097 152 1086 177C1076 202 1048 211 1030 234C1012 210 962 205 978 178Z" fill="#FFF1F7"/>
+    <path d="M664 250C681 221 710 199 740 199C770 199 791 222 780 248C770 275 740 284 720 308C703 283 647 279 664 250Z" fill="#FFD8E8"/>
+    <path d="M1411 128C1424 107 1446 91 1468 91C1491 91 1506 110 1499 129C1492 149 1470 156 1455 175C1442 156 1399 150 1411 128Z" fill="#FFF5FA"/>
+  </g>
+  <g opacity="0.22">
+    <path d="M0 516C192 454 395 443 573 486C781 536 930 635 1090 630C1245 625 1385 552 1600 518" stroke="#FFFFFF" stroke-width="2"/>
+    <path d="M0 572C216 518 448 517 642 563C812 604 980 688 1151 688C1305 688 1431 633 1600 605" stroke="#FFFFFF" stroke-width="2"/>
+  </g>
+  <defs>
+    <linearGradient id="bg" x1="168" y1="74" x2="1393" y2="864" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7FB"/>
+      <stop offset="0.42" stop-color="#FFDDEB"/>
+      <stop offset="1" stop-color="#F4B6D2"/>
+    </linearGradient>
+    <radialGradient id="bloomA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(286 215) rotate(90) scale(168)">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFD3E4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bloomB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1258 164) rotate(90) scale(142)">
+      <stop stop-color="#FFF9FC"/>
+      <stop offset="1" stop-color="#FFC2DA" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bloomC" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1114 626) rotate(90) scale(232)">
+      <stop stop-color="#FFDCEB"/>
+      <stop offset="1" stop-color="#F29BC1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ground" x1="258" y1="584" x2="1418" y2="908" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8C536E"/>
+      <stop offset="1" stop-color="#59324C"/>
+    </linearGradient>
+    <linearGradient id="ridge" x1="197" y1="664" x2="1518" y2="894" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D37BA5"/>
+      <stop offset="1" stop-color="#A65479"/>
+    </linearGradient>
+  </defs>
+</svg>
