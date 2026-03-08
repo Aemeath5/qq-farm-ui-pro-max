@@ -32,8 +32,8 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  DOCKERHUB_USERNAME: Aemeath5
-  DOCKERHUB_IMAGE: Aemeath5/qq-farm-ui
+  DOCKERHUB_USERNAME: aemeath5
+  DOCKERHUB_IMAGE: aemeath5/qq-farm-ui
 
 jobs:
   build-and-push:
