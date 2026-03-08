@@ -1310,8 +1310,9 @@ function startAdminServer(dataProvider) {
             const pageSize = Math.max(1, Math.min(100, Number.parseInt(req.query.pageSize !== undefined ? req.query.pageSize : req.query.limit, 10) || 10));
             const mode = String(req.query.mode || '').trim().toLowerCase();
             const status = String(req.query.status || '').trim().toLowerCase();
+            const sortOrder = String(req.query.sortOrder !== undefined ? req.query.sortOrder : (req.query.order || '')).trim().toLowerCase();
             const keyword = String(req.query.keyword !== undefined ? req.query.keyword : (req.query.q || '')).trim();
-            const data = await getReportLogs(id, { page, pageSize, mode, status, keyword });
+            const data = await getReportLogs(id, { page, pageSize, mode, status, sortOrder, keyword });
             res.json({ ok: true, data });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
@@ -1326,8 +1327,9 @@ function startAdminServer(dataProvider) {
             }
             const mode = String(req.query.mode || '').trim().toLowerCase();
             const status = String(req.query.status || '').trim().toLowerCase();
+            const sortOrder = String(req.query.sortOrder !== undefined ? req.query.sortOrder : (req.query.order || '')).trim().toLowerCase();
             const keyword = String(req.query.keyword !== undefined ? req.query.keyword : (req.query.q || '')).trim();
-            const data = await exportReportLogs(id, { mode, status, keyword, maxRows: 2000 });
+            const data = await exportReportLogs(id, { mode, status, sortOrder, keyword, maxRows: 2000 });
             const filename = `report-history-${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}-${Date.now()}.csv`;
             res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

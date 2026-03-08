@@ -281,6 +281,87 @@ function handleFriendAvatarError(friend: any) {
       </div>
     </div>
 
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <button class="batch-btn" :class="{ active: selectionMode }" @click="toggleSelectionMode">
+        {{ selectionMode ? '退出批量模式' : '批量模式' }}
+      </button>
+      <template v-if="selectionMode">
+        <button class="batch-btn batch-btn-subtle" @click="selectAllFiltered">
+          全选当前筛选
+        </button>
+        <button class="batch-btn batch-btn-subtle" @click="clearSelectedFriends">
+          清空选择
+        </button>
+        <span class="text-sm text-gray-500">
+          已选 {{ selectedFriendCount }} 位
+        </span>
+      </template>
+    </div>
+
+    <div v-if="selectionMode" class="glass-panel mb-4 rounded-xl p-4 shadow">
+      <div class="flex flex-wrap items-center gap-2">
+        <button class="batch-action batch-blue" :disabled="batchRunning || selectedFriendCount === 0" @click="handleBatchOp('steal')">
+          批量偷菜
+        </button>
+        <button class="batch-action batch-cyan" :disabled="batchRunning || selectedFriendCount === 0" @click="handleBatchOp('water')">
+          批量浇水
+        </button>
+        <button class="batch-action batch-green" :disabled="batchRunning || selectedFriendCount === 0" @click="handleBatchOp('weed')">
+          批量除草
+        </button>
+        <button class="batch-action batch-orange" :disabled="batchRunning || selectedFriendCount === 0" @click="handleBatchOp('bug')">
+          批量除虫
+        </button>
+        <button class="batch-action batch-red" :disabled="batchRunning || selectedFriendCount === 0" @click="handleBatchOp('bad')">
+          批量捣乱
+        </button>
+        <button class="batch-action batch-gray" :disabled="batchRunning || selectedFriendCount === 0" @click="handleBatchOp('blacklist_add')">
+          批量拉黑
+        </button>
+        <button class="batch-action batch-gray" :disabled="batchRunning || selectedFriendCount === 0" @click="handleBatchOp('blacklist_remove')">
+          批量移黑
+        </button>
+      </div>
+      <div class="mt-2 text-xs text-gray-500">
+        批量操作默认串行执行，每个好友之间会插入保守冷却，避免瞬时请求过密。
+      </div>
+    </div>
+
+    <div v-if="batchResult" class="glass-panel mb-4 rounded-xl p-4 shadow">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div class="text-sm font-semibold">
+            批量结果
+          </div>
+          <div class="mt-1 text-xs text-gray-500">
+            成功 {{ batchResult.successCount || 0 }} · 失败 {{ batchResult.failCount || 0 }} · 影响 {{ batchResult.totalAffectedCount || 0 }}
+          </div>
+        </div>
+        <button class="batch-btn batch-btn-subtle" @click="batchResult = null">
+          收起
+        </button>
+      </div>
+      <div class="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+        <div
+          v-for="row in batchResult.results || []"
+          :key="`batch-${row.gid}-${row.opType}`"
+          class="flex items-center justify-between rounded-lg border border-gray-200/60 px-3 py-2 text-sm dark:border-gray-700/60"
+        >
+          <div>
+            <div class="font-medium">
+              GID {{ row.gid }}
+            </div>
+            <div class="text-xs text-gray-500">
+              {{ row.message || '已处理' }}
+            </div>
+          </div>
+          <div class="text-xs" :class="row.ok ? 'text-emerald-500' : (row.skipped ? 'text-amber-500' : 'text-red-500')">
+            {{ row.ok ? `成功 ${row.count || 0}` : (row.skipped ? '已跳过' : '失败') }}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div v-if="loading || statusLoading" class="flex justify-center py-12">
       <div class="i-svg-spinners-90-ring-with-bg text-4xl text-blue-500" />
     </div>
@@ -322,6 +403,17 @@ function handleFriendAvatarError(friend: any) {
           >
             <!-- 头部：头像 + 名字 + 状态 -->
             <div class="flex items-center gap-3">
+              <label
+                v-if="selectionMode"
+                class="h-5 w-5 flex shrink-0 items-center justify-center rounded border border-gray-300/70 bg-white/80 dark:border-gray-600 dark:bg-black/30"
+                @click.stop
+              >
+                <input
+                  :checked="selectedIdSet.has(Number(friend.gid))"
+                  type="checkbox"
+                  @change="toggleFriendSelection(friend.gid, $event)"
+                >
+              </label>
               <div class="h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-1 ring-gray-100 dark:bg-gray-600 dark:ring-gray-700">
                 <img
                   v-if="canShowFriendAvatar(friend)"
@@ -443,6 +535,42 @@ function handleFriendAvatarError(friend: any) {
   transform: translateY(0);
 }
 
+.batch-btn {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.55);
+  padding: 0.5rem 0.95rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.batch-btn.active {
+  border-color: transparent;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: white;
+}
+
+.batch-btn-subtle {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.batch-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.5rem 0.95rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.batch-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 颜色方案变体 - 浅色模式 */
 .op-blue {
   background-color: #eff6ff;
@@ -468,6 +596,31 @@ function handleFriendAvatarError(friend: any) {
   background-color: #f8fafc;
   color: #475569;
   border: 1px solid #e2e8f0;
+}
+.batch-blue {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+}
+.batch-cyan {
+  background-color: #ecfeff;
+  color: #0e7490;
+}
+.batch-green {
+  background-color: #f0fdf4;
+  color: #15803d;
+}
+.batch-orange {
+  background-color: #fff7ed;
+  color: #c2410c;
+}
+.batch-red {
+  background-color: #fef2f2;
+  color: #b91c1c;
+}
+.batch-gray {
+  background-color: #f8fafc;
+  color: #475569;
+  border-color: #e2e8f0;
 }
 </style>
 
@@ -506,5 +659,30 @@ function handleFriendAvatarError(friend: any) {
 .dark .friends-op-area .op-btn:hover {
   box-shadow: 0 0 12px rgba(0, 0, 0, 0.2);
   border-color: currentColor;
+}
+.dark .batch-blue {
+  background-color: rgba(30, 64, 175, 0.15);
+  color: #60a5fa;
+}
+.dark .batch-cyan {
+  background-color: rgba(21, 94, 117, 0.15);
+  color: #22d3ee;
+}
+.dark .batch-green {
+  background-color: rgba(22, 101, 52, 0.15);
+  color: #4ade80;
+}
+.dark .batch-orange {
+  background-color: rgba(154, 52, 18, 0.15);
+  color: #fb923c;
+}
+.dark .batch-red {
+  background-color: rgba(127, 29, 29, 0.15);
+  color: #fca5a5;
+}
+.dark .batch-gray {
+  background-color: rgba(30, 41, 59, 0.4);
+  color: #94a3b8;
+  border-color: rgba(71, 85, 105, 0.3);
 }
 </style>

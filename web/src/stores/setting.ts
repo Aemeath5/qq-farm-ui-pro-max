@@ -152,6 +152,10 @@ export interface TimingConfig {
   ghostingMinMin: number
   ghostingMaxMin: number
   inviteRequestDelay: number
+  schedulerEngine: string
+  optimizedSchedulerNamespaces: string
+  optimizedSchedulerTickMs: number
+  optimizedSchedulerWheelSize: number
 }
 
 export interface TimingParameter {
@@ -255,6 +259,10 @@ export const useSettingStore = defineStore('setting', () => {
       ghostingMinMin: 5,
       ghostingMaxMin: 10,
       inviteRequestDelay: 2000,
+      schedulerEngine: 'hybrid',
+      optimizedSchedulerNamespaces: 'system-jobs,account-report-service,worker_manager',
+      optimizedSchedulerTickMs: 100,
+      optimizedSchedulerWheelSize: 600,
     },
     defaultTimingConfig: {
       heartbeatIntervalMs: 25000,
@@ -264,6 +272,10 @@ export const useSettingStore = defineStore('setting', () => {
       ghostingMinMin: 5,
       ghostingMaxMin: 10,
       inviteRequestDelay: 2000,
+      schedulerEngine: 'hybrid',
+      optimizedSchedulerNamespaces: 'system-jobs,account-report-service,worker_manager',
+      optimizedSchedulerTickMs: 100,
+      optimizedSchedulerWheelSize: 600,
     },
     readonlyTimingParams: [],
     clusterConfig: {
@@ -442,7 +454,7 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
-  async function fetchReportLogs(accountId: string, options: { page?: number, pageSize?: number, limit?: number, mode?: string, status?: string, keyword?: string } = {}) {
+  async function fetchReportLogs(accountId: string, options: { page?: number, pageSize?: number, limit?: number, mode?: string, status?: string, sortOrder?: string, keyword?: string } = {}) {
     if (!accountId) {
       reportLogs.value = []
       reportLogPagination.value = { page: 1, pageSize: 10, total: 0, totalPages: 1 }
@@ -458,6 +470,7 @@ export const useSettingStore = defineStore('setting', () => {
           pageSize,
           mode: options.mode || '',
           status: options.status || '',
+          sortOrder: options.sortOrder || 'desc',
           keyword: options.keyword || '',
         },
       })
@@ -522,7 +535,7 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
-  async function exportReportLogs(accountId: string, options: { mode?: string, status?: string, keyword?: string } = {}) {
+  async function exportReportLogs(accountId: string, options: { mode?: string, status?: string, sortOrder?: string, keyword?: string } = {}) {
     if (!accountId)
       return { ok: false, error: '未选择账号' }
     try {
@@ -531,6 +544,7 @@ export const useSettingStore = defineStore('setting', () => {
         params: {
           mode: options.mode || '',
           status: options.status || '',
+          sortOrder: options.sortOrder || 'desc',
           keyword: options.keyword || '',
         },
         responseType: 'blob',
@@ -613,8 +627,14 @@ export const useSettingStore = defineStore('setting', () => {
     try {
       const { data } = await api.get('/api/settings/timing-config')
       if (data && data.ok && data.data) {
-        settings.value.timingConfig = data.data.config
-        settings.value.defaultTimingConfig = data.data.defaults
+        settings.value.timingConfig = {
+          ...settings.value.timingConfig,
+          ...(data.data.config || {}),
+        }
+        settings.value.defaultTimingConfig = {
+          ...settings.value.defaultTimingConfig,
+          ...(data.data.defaults || {}),
+        }
         settings.value.readonlyTimingParams = data.data.readonlyParams || []
         return data.data
       }

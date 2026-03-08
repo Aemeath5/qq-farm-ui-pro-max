@@ -95,6 +95,7 @@ async function loadBag() {
     return
   }
   await Promise.all([
+    settingStore.fetchSettings(currentAccountId.value),
     bagStore.fetchBag(currentAccountId.value),
     bagStore.fetchSellPreview(currentAccountId.value),
     bagStore.fetchMallGoods(currentAccountId.value),

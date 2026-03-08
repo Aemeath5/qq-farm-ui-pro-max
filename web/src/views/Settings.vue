@@ -49,6 +49,7 @@ const reportFilters = ref({
   status: 'all',
 })
 const reportKeyword = ref('')
+const reportSortOrder = ref<'desc' | 'asc'>('desc')
 const reportPageSize = ref(10)
 
 // === 危险频率拦截警告 ===
@@ -271,6 +272,11 @@ const reportStatusOptions = [
   { label: '仅失败', value: 'failed' },
 ]
 
+const reportSortOrderOptions = [
+  { label: '最新优先', value: 'desc' },
+  { label: '最早优先', value: 'asc' },
+]
+
 const reportPageSizeOptions = [
   { label: '10 条/页', value: 10 },
   { label: '20 条/页', value: 20 },
@@ -384,6 +390,10 @@ const localTiming = ref({
   ghostingMinMin: 5,
   ghostingMaxMin: 10,
   inviteRequestDelay: 2000,
+  schedulerEngine: 'hybrid',
+  optimizedSchedulerNamespaces: 'system-jobs,account-report-service,worker_manager',
+  optimizedSchedulerTickMs: 100,
+  optimizedSchedulerWheelSize: 600,
 })
 
 const passwordForm = ref({
@@ -1091,6 +1101,7 @@ async function refreshReportLogs(options: { page?: number, pageSize?: number, re
       pageSize: targetPageSize,
       mode: reportFilters.value.mode,
       status: reportFilters.value.status,
+      sortOrder: reportSortOrder.value,
       keyword: reportKeyword.value.trim(),
     })
     reportPageSize.value = reportLogPagination.value.pageSize || reportPageSize.value || 10
@@ -1137,6 +1148,7 @@ async function handleExportReportLogs() {
     const res = await settingStore.exportReportLogs(currentAccountId.value, {
       mode: reportFilters.value.mode,
       status: reportFilters.value.status,
+      sortOrder: reportSortOrder.value,
       keyword: reportKeyword.value.trim(),
     })
     if (!res.ok || !res.blob) {
@@ -1168,6 +1180,13 @@ async function handleApplyReportSearch() {
   selectedReportLogIds.value = []
   closeReportLogDetail()
   await refreshReportLogs({ resetPage: true })
+}
+
+async function handleShowLatestFailed() {
+  reportFilters.value.status = 'failed'
+  reportSortOrder.value = 'desc'
+  reportKeyword.value = ''
+  await handleApplyReportSearch()
 }
 
 function isReportLogSelected(id: number) {
@@ -1300,7 +1319,7 @@ function closeReportLogDetail() {
   reportDetailItem.value = null
 }
 
-watch(() => [currentAccountId.value, reportFilters.value.mode, reportFilters.value.status], ([accountId]) => {
+watch(() => [currentAccountId.value, reportFilters.value.mode, reportFilters.value.status, reportSortOrder.value], ([accountId]) => {
   expandedReportLogIds.value = []
   selectedReportLogIds.value = []
   closeReportLogDetail()
@@ -1335,7 +1354,11 @@ async function loadTimingConfig() {
     return
   const data = await settingStore.fetchTimingConfig()
   if (data && data.config) {
-    localTiming.value = { ...data.config }
+    localTiming.value = {
+      ...localTiming.value,
+      ...(data.defaults || {}),
+      ...(data.config || {}),
+    }
   }
 }
 
@@ -1346,6 +1369,9 @@ async function handleSaveTiming() {
     && !Number.isNaN(t.ghostingProbability) && !Number.isNaN(t.ghostingCooldownMin)
     && !Number.isNaN(t.ghostingMinMin) && !Number.isNaN(t.ghostingMaxMin)
     && !Number.isNaN(t.inviteRequestDelay)
+    && !Number.isNaN(t.optimizedSchedulerTickMs)
+    && !Number.isNaN(t.optimizedSchedulerWheelSize)
+    && !!String(t.schedulerEngine || '').trim()
 
   if (!isValid) {
     showAlert('保存失败：请确保所有项均为有效数字', 'danger')
@@ -2124,12 +2150,27 @@ async function restoreTimingDefaults() {
                     <BaseButton
                       variant="secondary"
                       size="sm"
+                      @click="handleShowLatestFailed"
+                    >
+                      最新失败
+                    </BaseButton>
+                    <BaseButton
+                      variant="secondary"
+                      size="sm"
                       :disabled="!reportKeyword"
                       @click="reportKeyword = ''; handleApplyReportSearch()"
                     >
                       清空搜索
                     </BaseButton>
                   </div>
+                </div>
+
+                <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <BaseSelect
+                    v-model="reportSortOrder"
+                    label="时间排序"
+                    :options="reportSortOrderOptions"
+                  />
                 </div>
 
                 <div class="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
@@ -2461,7 +2502,7 @@ async function restoreTimingDefaults() {
         </div>
 
         <div class="p-4 space-y-6">
-          <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
             <!-- Group 1: Network & Heartbeat -->
             <div class="space-y-4">
               <h4 class="glass-text-muted flex items-center text-xs font-bold tracking-widest uppercase">
@@ -2540,6 +2581,41 @@ async function restoreTimingDefaults() {
                   <span class="glass-text-muted">{{ p.label }}</span>
                   <span class="text-primary-500 font-mono">{{ p.value }}</span>
                 </div>
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <h4 class="glass-text-muted flex items-center text-xs font-bold tracking-widest uppercase">
+                <div class="i-carbon-flow-stream mr-2" /> 调度器引擎
+              </h4>
+              <BaseSelect
+                v-model="localTiming.schedulerEngine"
+                label="默认调度引擎"
+                :options="[
+                  { label: '默认 setTimeout', value: 'default' },
+                  { label: '全量时间轮', value: 'optimized' },
+                  { label: '混合模式', value: 'hybrid' },
+                ]"
+              />
+              <BaseInput
+                v-model="localTiming.optimizedSchedulerNamespaces"
+                label="时间轮命名空间"
+                type="text"
+                hint="逗号分隔，例如：system-jobs,account-report-service,worker_manager"
+              />
+              <div class="grid grid-cols-2 gap-3">
+                <BaseInput
+                  v-model.number="localTiming.optimizedSchedulerTickMs"
+                  label="时间轮 Tick (ms)"
+                  type="number"
+                  min="10"
+                />
+                <BaseInput
+                  v-model.number="localTiming.optimizedSchedulerWheelSize"
+                  label="槽位数量"
+                  type="number"
+                  min="10"
+                />
               </div>
             </div>
           </div>

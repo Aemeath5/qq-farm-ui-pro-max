@@ -1300,6 +1300,11 @@ const DEFAULT_TIMING_CONFIG = {
     rateLimitIntervalMs: 334,       // 两次 WS 请求之间的最小间隔（毫秒）
     // 邀请码处理延迟
     inviteRequestDelay: 2000,       // 邀请码逐条处理间隔（毫秒）
+    // 调度器引擎
+    schedulerEngine: 'hybrid',      // default | optimized | hybrid
+    optimizedSchedulerNamespaces: 'system-jobs,account-report-service,worker_manager',
+    optimizedSchedulerTickMs: 100,
+    optimizedSchedulerWheelSize: 600,
 };
 
 // ============ 体验卡相关配置 ============
@@ -1332,8 +1337,13 @@ function setTimingConfig(cfg) {
     const next = {};
     for (const key of Object.keys(DEFAULT_TIMING_CONFIG)) {
         if (input[key] !== undefined) {
-            next[key] = Number(input[key]);
-            if (!Number.isFinite(next[key])) next[key] = current[key];
+            if (typeof DEFAULT_TIMING_CONFIG[key] === 'number') {
+                next[key] = Number(input[key]);
+                if (!Number.isFinite(next[key])) next[key] = current[key];
+            } else {
+                next[key] = String(input[key] ?? current[key] ?? DEFAULT_TIMING_CONFIG[key]).trim();
+                if (!next[key]) next[key] = DEFAULT_TIMING_CONFIG[key];
+            }
         } else {
             next[key] = current[key];
         }

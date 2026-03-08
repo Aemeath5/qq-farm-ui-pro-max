@@ -275,12 +275,15 @@ function normalizeReportLogFilters(options = {}) {
     const opts = (options && typeof options === 'object') ? options : {};
     const rawMode = String(opts.mode || '').trim().toLowerCase();
     const rawStatus = String(opts.status || '').trim().toLowerCase();
+    const rawSortOrder = String(opts.sortOrder !== undefined ? opts.sortOrder : (opts.order || '')).trim().toLowerCase();
     const keyword = String(opts.keyword !== undefined ? opts.keyword : (opts.q || '')).trim().slice(0, 100);
     const allowedModes = new Set(['test', 'hourly', 'daily']);
     const allowedStatus = new Set(['success', 'failed']);
+    const allowedSortOrders = new Set(['asc', 'desc']);
     return {
         mode: allowedModes.has(rawMode) ? rawMode : '',
         status: allowedStatus.has(rawStatus) ? rawStatus : '',
+        sortOrder: allowedSortOrders.has(rawSortOrder) ? rawSortOrder : 'desc',
         keyword,
     };
 }
@@ -302,7 +305,7 @@ function buildReportLogWhereClause(accountId, options = {}) {
         whereSql += ' AND (title LIKE ? OR content LIKE ? OR error_message LIKE ?)';
         params.push(keywordPattern, keywordPattern, keywordPattern);
     }
-    return { whereSql, params };
+    return { whereSql, params, filters };
 }
 
 function mapReportLogRows(rows) {
@@ -329,7 +332,7 @@ async function getReportLogs(accountId, options = {}) {
     const pageSize = Math.max(1, Math.min(100, Number.parseInt(opts.pageSize !== undefined ? opts.pageSize : opts.limit, 10) || 10));
     const page = Math.max(1, Number.parseInt(opts.page, 10) || 1);
     const offset = (page - 1) * pageSize;
-    const { whereSql, params } = buildReportLogWhereClause(accountId, opts);
+    const { whereSql, params, filters } = buildReportLogWhereClause(accountId, opts);
     const [[countRow]] = await pool.execute(
         `SELECT COUNT(*) AS total FROM report_logs ${whereSql}`,
         params,
@@ -339,7 +342,7 @@ async function getReportLogs(accountId, options = {}) {
         `SELECT id, account_id, account_name, mode, ok, channel, title, content, error_message, created_at
          FROM report_logs
          ${whereSql}
-         ORDER BY id DESC
+         ORDER BY id ${filters.sortOrder === 'asc' ? 'ASC' : 'DESC'}
          LIMIT ${pageSize} OFFSET ${offset}`,
         params,
     );
@@ -359,7 +362,7 @@ async function exportReportLogs(accountId, options = {}) {
     }
     const opts = (options && typeof options === 'object') ? options : {};
     const maxRows = Math.max(1, Math.min(2000, Number.parseInt(opts.maxRows, 10) || 1000));
-    const { whereSql, params } = buildReportLogWhereClause(accountId, opts);
+    const { whereSql, params, filters } = buildReportLogWhereClause(accountId, opts);
     const [[countRow]] = await pool.execute(
         `SELECT COUNT(*) AS total FROM report_logs ${whereSql}`,
         params,
@@ -369,7 +372,7 @@ async function exportReportLogs(accountId, options = {}) {
         `SELECT id, account_id, account_name, mode, ok, channel, title, content, error_message, created_at
          FROM report_logs
          ${whereSql}
-         ORDER BY id DESC
+         ORDER BY id ${filters.sortOrder === 'asc' ? 'ASC' : 'DESC'}
          LIMIT ${maxRows}`,
         params,
     );

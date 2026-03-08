@@ -4,9 +4,8 @@
  * 替代 setTimeout 模式，在大量定时任务场景下性能更优。
  * O(1) 的任务插入和删除，O(1) 的 tick 推进。
  *
- * 注意：本模块为可选实现，当前未被 scheduler.js 使用。
- * 需在 scheduler.js 中手动切换或配置方可启用。
- * 兼容现有 scheduler.js 接口，可配置切换。
+ * 注意：本模块由 scheduler.js 统一接管，业务层不应直接依赖本文件。
+ * 兼容现有 scheduler.js 接口，并支持按 namespace 灰度切换。
  */
 
 const { createModuleLogger } = require('./logger');
